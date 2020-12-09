@@ -177,7 +177,6 @@ importEntries.prototype = {
           return resolve()
         })
       }).catch(function (error) {
-        console.log("dbcdbchdchd")
         return reject(error)
       })
     }).catch(error => {
@@ -700,17 +699,6 @@ importEntries.prototype = {
       }
 
       return Promise.map(bugged, function (entry) {
-        // let requestObject = {
-        //   uri: self.requestOptionTemplate.uri + entry.content_type + config.apis.entries + self.mappedUids[
-        //   entry.uid],
-        //   method: 'DELETE',
-        //   qs: {
-        //     locale: masterLanguage.code
-        //   },
-        //   headers: self.requestOptionTemplate.headers,
-        //   json: true
-        // }
-
         return client.stack({ api_key: config.source_stack, management_token: config.management_token }).contentType(entry.content_type).entry(self.mappedUids[entry.uid]).delete({ locale: masterLanguage.code })
           .then(function () {
             removed.push(self.mappedUids[entry.uid])
