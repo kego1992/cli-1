@@ -13,7 +13,7 @@ exports.initial = function (config) {
     return config
   }
 
-  login.login(config).then(function () {
+  login.login(config).then(async function () {
     var types = config.modules.types
     if (config.moduleName && config.moduleName !== undefined) {
       singleExport(config.moduleName, types, config)
@@ -50,7 +50,7 @@ var singleExport = (moduleName, types, config) => {
 
 var allExport = async (config, types) => {
   var counter = 0
-  Bluebird.map(types, function (type) {
+  Bluebird.map(types, async function (type) {
     if (config.preserveStackVersion) {
       var exportedModule = require('./lib/export/' + types[counter])
       counter++
@@ -67,7 +67,8 @@ var allExport = async (config, types) => {
   }).then(function () {
     addlogs(config, chalk.green('Stack: ' + config.source_stack + ' has been exported succesfully!'), 'success')
     addlogs(config, 'The log for this is stored at ' + path.join(config.data , 'logs', 'export'), 'success')
-  }).catch(function () {
+  }).catch(function (err) {
+    console.log("errror", err);
     addlogs(config, chalk.red('Failed to migrate stack: ' + config.source_stack + '. Please check error logs for more info'), 'error')
     addlogs(config, 'The log for this is stored at ' + path.join(config.data , 'logs', 'export'), 'error')
   })

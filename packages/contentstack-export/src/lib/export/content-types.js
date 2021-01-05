@@ -7,14 +7,12 @@
 const mkdirp = require('mkdirp')
 const path = require('path')
 const chalk = require('chalk')
-const Promise = require('bluebird')
 
 const helper = require('../util/helper')
-// const log = require('../util/log')
 const stack = require('../util/contentstack-management-sdk')
 const {addlogs} = require('../util/log')
-
 let config = require('../../config/default')
+
 const contentTypeConfig = config.modules.content_types
 const validKeys = contentTypeConfig.validKeys
 let client

@@ -3,16 +3,14 @@
  * Copyright (c) 2019 Contentstack LLC
  * MIT Licensed
  */
-const Promise = require('bluebird')
 const fs = require('fs')
 const path = require('path')
 const _ = require('lodash')
 const mkdirp = require('mkdirp')
 const chalk = require('chalk')
 
-const request = require('../util/request')
 const helper = require('../util/fs')
-const {addlogs} = require('../util/log')
+const { addlogs } = require('../util/log')
 const lookupReplaceAssets = require('../util/lookupReplaceAssets')
 const lookupReplaceEntries = require('../util/lookupReplaceEntries')
 const supress = require('../util/supress-mandatory-fields')
@@ -38,6 +36,11 @@ let modifiedSchemaPath
 let createdEntriesWOUidPath
 let failedWOPath
 let publishEntryUid
+let createdEntriesPath
+let eLangFolderPath
+let eLogFolderPath
+let createdEntries = {}
+
 
 
 let masterLanguage = config.master_locale
@@ -128,47 +131,34 @@ importEntries.prototype = {
 
       return self.supressFields().then(async function () {
         let counter = 0
-        return Promise.map(langs, async function () {
+        for (let i = 0; i < langs.length; i++) {
           let lang = langs[counter]
           if ((config.hasOwnProperty('onlylocales') && config.onlylocales.indexOf(lang) !== -1) || !
-          config.hasOwnProperty('onlylocales')) {
+            config.hasOwnProperty('onlylocales')) {
             await self.createEntries(lang)
-            // .then(async function () {
-              await self.getCreatedEntriesWOUid()
-              // .then(async function () {
-                await self.repostEntries(lang)
-                // .then(function () {
-                  addlogs(config, 'Successfully imported \'' + lang + '\' entries!', 'success')
-                  counter++
-                // })
-              // })
-           // })
+            await self.getCreatedEntriesWOUid()
+            await self.repostEntries(lang)
+            addlogs(config, 'Successfully imported \'' + lang + '\' entries!', 'success')
+            counter++
           } else {
             addlogs(config, lang + ' has not been configured for import, thus skipping it', 'success')
-            counter++          
+            counter++
           }
-        }, {
-          concurrency: 1
-        }).then(async function () {
-          await self.unSupressFields()
-          //.then(function () {
-            await self.removeBuggedEntries()
-            //.then(async function () {
-              let ct_field_visibility_uid = helper.readFile(path.join(ctPath + '/field_rules_uid.json'))
-              let ct_files = fs.readdirSync(ctPath)
-              if (ct_field_visibility_uid && ct_field_visibility_uid != 'undefined') {
-                for (let index = 0; index < ct_field_visibility_uid.length; index++) {
-                  if (ct_files.indexOf(ct_field_visibility_uid[index] + '.json') > -1) {
-                    let schema = require(path.resolve(ctPath, ct_field_visibility_uid[index]))
-                    await self.field_rules_update(schema)
-                  }
-                }
-              }
-              addlogs(config, chalk.green('Entries have been imported successfully!'), 'success')
-              return resolve()
-           // })
-         // })
-        })
+        }
+        await self.unSupressFields()
+        await self.removeBuggedEntries()
+        let ct_field_visibility_uid = helper.readFile(path.join(ctPath + '/field_rules_uid.json'))
+        let ct_files = fs.readdirSync(ctPath)
+        if (ct_field_visibility_uid && ct_field_visibility_uid != 'undefined') {
+          for (let index = 0; index < ct_field_visibility_uid.length; index++) {
+            if (ct_files.indexOf(ct_field_visibility_uid[index] + '.json') > -1) {
+              let schema = require(path.resolve(ctPath, ct_field_visibility_uid[index]))
+              await self.field_rules_update(schema)
+            }
+          }
+        }
+        addlogs(config, chalk.green('Entries have been imported successfully!'), 'success')
+        return resolve()
       }).catch(function (error) {
         return reject(error)
       })
@@ -184,94 +174,114 @@ importEntries.prototype = {
         self.mappedUids = helper.readFile(entryUidMapperPath)
       }
       self.mappedUids = self.mappedUids || {}
-      return Promise.map(contentTypeUids, function (ctUid) {
-        let eLangFolderPath = path.join(entryMapperPath, lang)
-        let eLogFolderPath = path.join(entryMapperPath, lang, ctUid)
-        mkdirp.sync(eLogFolderPath)
-        // entry file path
-        let eFilePath = path.resolve(ePath, ctUid, lang + '.json')
+      try {
+        for (let i = 0; i < contentTypeUids.length; i++) {
+          let ctUid = contentTypeUids[i]
+              eLangFolderPath = path.join(entryMapperPath, lang)
+              eLogFolderPath = path.join(entryMapperPath, lang, ctUid)
+          mkdirp.sync(eLogFolderPath)
+          // entry file path
+          let eFilePath = path.resolve(ePath, ctUid, lang + '.json')
+          createdEntriesPath = path.join(eLogFolderPath, 'created-entries.json')
 
-        // log created/updated entries
-        let successEntryLogPath = path.join(eLogFolderPath, 'success.json')
-        let failedEntryLogPath = path.join(eLogFolderPath, 'fails.json')
-        let createdEntriesPath = path.join(eLogFolderPath, 'created-entries.json')
-        let createdEntries = {}
-        if (fs.existsSync(createdEntriesPath)) {
-          createdEntries = helper.readFile(createdEntriesPath)
-          createdEntries = createdEntries || {}
+          if (fs.existsSync(createdEntriesPath)) {
+            createdEntries = helper.readFile(createdEntriesPath)
+            createdEntries = createdEntries || {}
+          }
+          if (fs.existsSync(eFilePath)) {
+            let entries = helper.readFile(eFilePath)
+            if (!_.isPlainObject(entries)) {
+              addlogs(config, chalk.white('No entries were found for Content type:\'' + ctUid + '\' in \'' + lang +
+                '\' language!'), 'success')
+              return resolve()
+            }
+            for (let eUid in entries) {
+              // will replace all old asset uid/urls with new ones
+              entries[eUid] = lookupReplaceAssets({
+                content_type: self.ctSchemas[ctUid],
+                entry: entries[eUid]
+              }, self.mappedAssetUids, self.mappedAssetUrls, eLangFolderPath)
+            }
+            await self.batchLimit(entries, lang, ctUid).then(function () {
+              return
+            })
+          } else {
+            addlogs(config, chalk.red('Unable to find entry file path for ' + ctUid + ' content type!\nThe file \'' +
+              eFilePath + '\' does not exist!'), 'error')
+
+          }
         }
-        if (fs.existsSync(eFilePath)) {
-          let entries = helper.readFile(eFilePath)
-          if (!_.isPlainObject(entries)) {
-            addlogs(config, chalk.white('No entries were found for Content type:\'' + ctUid + '\' in \'' + lang +
-                            '\' language!'), 'success')
-            return resolve()
+        addlogs(config, chalk.green('Entries created successfully in \'' + lang + '\' language'), 'success')
+        return resolve()
+      } catch (e) {
+        addlogs(config, chalk.red('Failed to create entries in \'' + lang + '\' language'), 'error')
+        return reject(e)
+      }
+    })
+  },
+
+  batchLimit: function (entries, lang, ctUid) {
+    let self = this
+    let successEntryLogPath = path.join(eLogFolderPath, 'success.json')
+    let failedEntryLogPath = path.join(eLogFolderPath, 'fails.json')
+    let eUids = Object.keys(entries)
+    let batches = []
+
+    // Run entry creation in batches of ~16~ entries
+    for (let i = 0; i < eUids.length; i += entryBatchLimit) {
+      batches.push(eUids.slice(i, i + entryBatchLimit))
+    }
+
+    return new Promise(async function (resolve, reject) {
+      for (let i = 0; i < batches.length; i++) {
+        let batch = batches[i]
+        for (let j = 0; j < batch.length; j++) {
+          let eUid = batch[j]
+          //if entry is already created
+          if (createdEntries.hasOwnProperty(eUid)) {
+            addlogs(config, ('Skipping ' + JSON.stringify({
+              content_type: ctUid,
+              locale: lang,
+              oldEntryUid: eUid,
+              newEntryUid: createdEntries[eUid]
+            }) + ' as it is already created'), 'success')
+            self.success[ctUid] = createdEntries[eUid]
+            // if its a non-master language, i.e. the entry isn't present in the master language
+            if (lang !== masterLanguage) {
+              self.uniqueUids[eUid] = self.uniqueUids[eUid] || {}
+              if (self.uniqueUids[eUid].locales) {
+                self.uniqueUids[eUid].locales.push(lang)
+              } else {
+                self.uniqueUids[eUid].locales = [lang]
+              }
+              self.uniqueUids[eUid].content_type = ctUid
+            }
+            return
           }
-          for (let eUid in entries) {
-            // will replace all old asset uid/urls with new ones
-            entries[eUid] = lookupReplaceAssets({
-              content_type: self.ctSchemas[ctUid],
+          let requestObject = {
+            qs: {
+              locale: lang
+            },
+            json: {
               entry: entries[eUid]
-            }, self.mappedAssetUids, self.mappedAssetUrls, eLangFolderPath)
+            }
           }
-          let eUids = Object.keys(entries)
-          let batches = []
-
-          // Run entry creation in batches of ~16~ entries
-          for (let i = 0; i < eUids.length; i += entryBatchLimit) {
-            batches.push(eUids.slice(i, i + entryBatchLimit))
-          }
-
-          return Promise.map(batches, async function (batch) {
-            return Promise.map(batch, async function (eUid) {
-              //if entry is already created
-              if (createdEntries.hasOwnProperty(eUid)) {
-                addlogs(config, ('Skipping ' + JSON.stringify({
-                  content_type: ctUid,
-                  locale: lang,
-                  oldEntryUid: eUid,
-                  newEntryUid: createdEntries[eUid]
-                }) + ' as it is already created'), 'success')
-                self.success[ctUid] = createdEntries[eUid]
-                // if its a non-master language, i.e. the entry isn't present in the master language
-                if (lang !== masterLanguage) {
-                  self.uniqueUids[eUid] = self.uniqueUids[eUid] || {}
-                  if (self.uniqueUids[eUid].locales) {
-                    self.uniqueUids[eUid].locales.push(lang)
-                  } else {
-                    self.uniqueUids[eUid].locales = [lang]
-                  }
-                  self.uniqueUids[eUid].content_type = ctUid
-                }
-                return
-              }
-              let requestObject = {
-                qs: {
-                  locale: lang
-                },
-                json: {
-                  entry: entries[eUid]
-                }
-              }
-
-              if (self.mappedUids.hasOwnProperty(eUid)) {                                
-              return client.stack({api_key: config.target_stack, management_token: config.management_token}).contentType(ctUid).entry(self.mappedUids[eUid]).fetch()
+          if (self.mappedUids.hasOwnProperty(eUid)) {
+            return client.stack({ api_key: config.target_stack, management_token: config.management_token }).contentType(ctUid).entry(self.mappedUids[eUid]).fetch()
               .then(entryToUpdate => {
                 Object.assign(entryToUpdate, _.cloneDeep(requestObject.json.entry))
-                return entryToUpdate.update({locale: entryToUpdate.locale}).then(async result => {   
+                return entryToUpdate.update({ locale: entryToUpdate.locale }).then(async result => {
                   if (config.entriesPublish) {
                     if (entries[eUid].publish_details.length > 0) {
                       if (self.mappedUids.hasOwnProperty(eUid)) {
-                         publishEntryUid = self.mappedUids[eUid]
+                        publishEntryUid = self.mappedUids[eUid]
                       } else {
-                         publishEntryUid = createdEntries.uid
+                        publishEntryUid = createdEntries.uid
                       }
                       await self.publish(publishEntryUid, ctUid, lang, entries[eUid])
-                      // .then(function () {
-                      // })
                     }
                   }
-                  return           
+                  return
                 }).catch(function (err) {
                   let error = JSON.parse(err.message)
                   if (error.hasOwnProperty('error_code') && error.error_code === 119) {
@@ -300,8 +310,8 @@ importEntries.prototype = {
                   })
                 })
               })
-              } else {
-              return client.stack({api_key: config.target_stack, management_token: config.management_token}).contentType(ctUid).entry().create(requestObject.json)
+          } else {
+            await client.stack({ api_key: config.target_stack, management_token: config.management_token }).contentType(ctUid).entry().create(requestObject.json)
               .then(async entryResponse => {
                 self.success[ctUid] = self.success[ctUid] || []
                 self.success[ctUid].push(entries[eUid])
@@ -323,9 +333,9 @@ importEntries.prototype = {
                 if (config.entriesPublish) {
                   if (entries[eUid].publish_details.length > 0) {
                     if (self.mappedUids.hasOwnProperty(eUid)) {
-                       publishEntryUid = self.mappedUids[eUid]
+                      publishEntryUid = self.mappedUids[eUid]
                     } else {
-                       publishEntryUid = createdEntries.uid
+                      publishEntryUid = createdEntries.uid
                     }
                     await self.publish(publishEntryUid, ctUid, lang, entries[eUid])
                     // .then(function () {
@@ -333,9 +343,9 @@ importEntries.prototype = {
                   }
                 }
                 return;
-              }).catch(function (error) {                
+              }).catch(function (error) {
                 // let error = JSON.parse(err.message)
-                if (error.hasOwnProperty('error_code') && error.error_code === 119) {
+                if (error.hasOwnProperty('errorCode') && error.errorCode === 119) {
                   if (error.errors.title) {
                     addlogs(config, 'Entry ' + eUid + ' already exist, skip to avoid creating a duplicate entry', 'error')
                   } else {
@@ -352,7 +362,7 @@ importEntries.prototype = {
                 }
                 // TODO: if status code: 422, check the reason
                 // 429 for rate limit
-                addlogs(config, chalk.red('Error creating entry', JSON.stringify(error)), 'error')
+                addlogs(config, chalk.red('Error creating entry', error), 'error')
                 self.fails.push({
                   content_type: ctUid,
                   locale: lang,
@@ -360,41 +370,23 @@ importEntries.prototype = {
                   error: error
                 })
               })
-            }
-              // create/update 5 entries at a time
-            }, {
-              concurrency: reqConcurrency
-            }).then(function () {
-              helper.writeFile(successEntryLogPath, self.success[ctUid])
-              helper.writeFile(failedEntryLogPath, self.fails[ctUid])
-              helper.writeFile(entryUidMapperPath, self.mappedUids)
-              helper.writeFile(uniqueUidMapperPath, self.uniqueUids)
-              helper.writeFile(createdEntriesPath, createdEntries)
-            })
-            // process one batch at a time
-          }, {
-            concurrency: reqConcurrency
-          }).then(function () {
-            addlogs(config, 'Entries created successfully in ' + ctUid + ' content type in ' + lang +
-                            ' locale!', 'success')
-            self.success[ctUid] = []
-            self.fails[ctUid] = []
-            
-          })
-        } else {
-          addlogs(config, chalk.red('Unable to find entry file path for ' + ctUid + ' content type!\nThe file \'' +
-                         eFilePath + '\' does not exist!'), 'error')
-                    
+          }
+          // create/update 5 entries at a time
         }
-      }, {
-        concurrency: reqConcurrency
-      }).then(function () {
-        addlogs(config, chalk.green('Entries created successfully in \'' + lang + '\' language'), 'success')
-        return resolve()
-      }).catch(function (error) {
-        addlogs(config, chalk.red('Failed to create entries in \'' + lang + '\' language'), 'error')
-        return reject(error)
-      })
+        //.then(function () {
+        helper.writeFile(successEntryLogPath, self.success[ctUid])
+        helper.writeFile(failedEntryLogPath, self.fails[ctUid])
+        helper.writeFile(entryUidMapperPath, self.mappedUids)
+        helper.writeFile(uniqueUidMapperPath, self.uniqueUids)
+        helper.writeFile(createdEntriesPath, createdEntries)
+        //})
+        // // process one batch at a time
+      }
+      addlogs(config, 'Entries created successfully in ' + ctUid + ' content type in ' + lang +
+        ' locale!', 'success')
+      self.success[ctUid] = []
+      self.fails[ctUid] = []
+      return resolve()
     })
   },
   getCreatedEntriesWOUid: function () {
@@ -403,15 +395,13 @@ importEntries.prototype = {
       self.createdEntriesWOUid = helper.readFile(createdEntriesWOUidPath)
       self.failedWO = []
       if (_.isArray(self.createdEntriesWOUid) && self.createdEntriesWOUid.length) {
-        return Promise.map(self.createdEntriesWOUid, function (entry) {
+        for (let i = 0; i < self.createdEntriesWOUid; i++) {
+          let entry = self.createdEntriesWOUid[i]
           return self.fetchEntry(entry)
-        }, {
-          concurrency: reqConcurrency
-        }).then(function () {
-          helper.writeFile(failedWOPath, self.failedWO)
-          addlogs(config, 'Mapped entries without mapped uid successfully!', 'success')
-          return resolve()
-        })
+        }
+        helper.writeFile(failedWOPath, self.failedWO)
+        addlogs(config, 'Mapped entries without mapped uid successfully!', 'success')
+        return resolve()
       } else {
         addlogs(config, 'No entries without mapped uid found!', 'success')
         return resolve()
@@ -420,150 +410,172 @@ importEntries.prototype = {
   },
   repostEntries: function (lang) {
     let self = this
-    return new Promise(function (resolve, reject) {
+    return new Promise(async function (resolve, reject) {
       let _mapped_ = helper.readFile(path.join(entryMapperPath, 'uid-mapping.json'))
       if (_.isPlainObject(_mapped_)) {
         self.mappedUids = _.merge(_mapped_, self.mappedUids)
       }
-      return Promise.map(self.refSchemas, function (ctUid) {
-        let eFolderPath = path.join(entryMapperPath, lang, ctUid)
-        let eSuccessFilePath = path.join(eFolderPath, 'success.json')
+      try {
+        // return Promise.map(self.refSchemas, function (ctUid) {
+        // self.refSchemas.forEach(ctUid => {
+        for (let i = 0; i < self.refSchemas.length; i++) {
+          let ctUid = self.refSchemas[i]
+          let eFolderPath = path.join(entryMapperPath, lang, ctUid)
+          let eSuccessFilePath = path.join(eFolderPath, 'success.json')
 
-        if (!fs.existsSync(eSuccessFilePath)) {
-          addlogs(config, 'Success file was not found at: ' + eSuccessFilePath, 'success')
-          return resolve()
-        }
-
-        let entries = helper.readFile(eSuccessFilePath)
-        entries = entries || []
-        if (entries.length === 0) {
-          addlogs(config, 'No entries were created to be updated in \'' + lang + '\' language!', 'success')
-          return resolve()
-        }
-
-        // Keep track of entries that have their references updated
-        let refsUpdatedUids = helper.readFile(path.join(eFolderPath, 'refsUpdatedUids.json'))
-        let refsUpdateFailed = helper.readFile(path.join(eFolderPath, 'refsUpdateFailed.json'))
-        let schema = self.ctSchemas[ctUid]
-
-        let batches = []
-        refsUpdatedUids = refsUpdatedUids || []
-        refsUpdateFailed = refsUpdateFailed || []
-
-        // map reference uids @mapper/language/mapped-uids.json
-        // map failed reference uids @mapper/language/unmapped-uids.json
-        let refUidMapperPath = path.join(entryMapperPath, lang)
-
-        entries = _.map(entries, function (entry) {
-          try {
-            let uid = entry.uid
-            let _entry = lookupReplaceEntries({
-              content_type: schema,
-              entry: entry
-            }, _.clone(self.mappedUids), refUidMapperPath)
-            // if there's self references, the uid gets replaced
-            _entry.uid = uid
-            return _entry
-          } catch (error) {
-            console.error(error)
+          if (!fs.existsSync(eSuccessFilePath)) {
+            addlogs(config, 'Success file was not found at: ' + eSuccessFilePath, 'success')
+            return resolve()
           }
-        })
 
-        // Run entry creation in batches of ~16~ entries
-        for (let i = 0; i < entries.length; i += entryBatchLimit) {
-          batches.push(entries.slice(i, i + entryBatchLimit))
-        }
-        return Promise.map(batches, function (batch, index) {
-          return Promise.map(batch, function (entry) {
-            entry.uid = self.mappedUids[entry.uid]
-            if (refsUpdatedUids.indexOf(entry.uid) !== -1) {
-              addlogs(config, 'Entry: ' + entry.uid + ' in Content Type: ' + ctUid + ' in lang: ' +
-                                lang + ' references fields are already updated.', 'success')
-              return;
-            }
+          let entries = helper.readFile(eSuccessFilePath)
+          entries = entries || []
+          if (entries.length === 0) {
+            addlogs(config, 'No entries were created to be updated in \'' + lang + '\' language!', 'success')
+            return resolve()
+          }
 
-            let requestObject = {
-              qs: {
-                locale: lang
-              },
-              json: {
+          // Keep track of entries that have their references updated
+          let refsUpdatedUids = helper.readFile(path.join(eFolderPath, 'refsUpdatedUids.json'))
+          let refsUpdateFailed = helper.readFile(path.join(eFolderPath, 'refsUpdateFailed.json'))
+          let schema = self.ctSchemas[ctUid]
+
+          let batches = []
+          refsUpdatedUids = refsUpdatedUids || []
+          refsUpdateFailed = refsUpdateFailed || []
+
+          // map reference uids @mapper/language/mapped-uids.json
+          // map failed reference uids @mapper/language/unmapped-uids.json
+          let refUidMapperPath = path.join(entryMapperPath, lang)
+
+          entries = _.map(entries, function (entry) {
+            try {
+              let uid = entry.uid
+              let _entry = lookupReplaceEntries({
+                content_type: schema,
                 entry: entry
-              }
+              }, _.clone(self.mappedUids), refUidMapperPath)
+              // if there's self references, the uid gets replaced
+              _entry.uid = uid
+              return _entry
+            } catch (error) {
+              console.error(error)
             }
-
-            client.stack({api_key: config.target_stack, management_token: config.management_token}).contentType(ctUid).entry(entry.uid).fetch(requestObject.qs)
-            .then(entryResponse => {
-              Object.assign(entryResponse, _.cloneDeep(entry))
-              delete entryResponse.publish_details
-              return entryResponse.update()
-            })
-            .then(response => {
-              for (let j = 0; j < entries.length; j++) {
-                if (entries[j].uid === response.uid) {
-                  entries[j] = response
-                  break;
-                }
-              }
-              if (config.entriesPublish) {
-                if (entry.publish_details.length > 0) {
-                  let entryUid = response
-                return self.publish(entryUid.uid, ctUid, lang, entry).then(function () {
-                  return
-                  })
-                }
-              }
-              refsUpdatedUids.push(response.uid)
-            })
-            .catch(function (error) {
-              addlogs(config, chalk.red('Entry Uid: ' + entry.uid + ' of Content Type: ' + ctUid +
-                                  ' failed to update in locale: ' + lang), 'error')
-              
-              addlogs(config, error, 'error')
-              refsUpdateFailed.push({
-                content_type: ctUid,
-                entry: entry,
-                locale: lang,
-                error: error
-              })
-            }) 
-          }, {
-            concurrency: reqConcurrency
-          }).then(function () {
-            // batch completed successfully
-            helper.writeFile(path.join(eFolderPath, 'success.json'), entries)
-            helper.writeFile(path.join(eFolderPath, 'refsUpdatedUids.json'), refsUpdatedUids)
-            helper.writeFile(path.join(eFolderPath, 'refsUpdateFailed.json'), refsUpdateFailed)
-            addlogs(config, 'Completed batch no: ' + (index + 1) + ' successfully!', 'success')
-                        
-          }).catch(function (error) {
-            // error while executing entry in batch
-            addlogs(config, chalk.red('Failed at batch no: ' + (index + 1)), 'error')
-            throw error
           })
-        }, {
-          concurrency: reqConcurrency
-        }).then(function () {
-          // finished updating entries with references
-          addlogs(config, 'Imported entries of Content Type: \'' + ctUid + '\' in language: \'' + lang +
-                        '\' successfully!', 'success')
-                    
-        }).catch(function (error) {
-          // error while updating entries with references
-          addlogs(config, chalk.red('Failed while importing entries of Content Type: \'' + ctUid + '\' in language: \'' +
-                        lang + '\' successfully!'), 'error')
-          throw error
-        })
-      }, {
-        concurrency: reqConcurrency
-      }).then(function () {
-        // completed updating entry references
+
+          // Run entry creation in batches of ~16~ entries
+          for (let i = 0; i < entries.length; i += entryBatchLimit) {
+            batches.push(entries.slice(i, i + entryBatchLimit))
+          }
+          // return Promise.map(batches, function (batch, index) {
+          try {
+            // batches.forEach((batch, index) => {
+            for (let i = 0; i < batches.length; i++) {
+              let index = i
+              // return Promise.map(batch, function (entry) {
+              try {
+                for (let j = 0; j < batches[i].length; j++) {
+                  // batch.forEach(entry => {
+                  let entry = batches[i][j]
+                  entry.uid = self.mappedUids[entry.uid]
+                  if (refsUpdatedUids.indexOf(entry.uid) !== -1) {
+                    addlogs(config, 'Entry: ' + entry.uid + ' in Content Type: ' + ctUid + ' in lang: ' +
+                      lang + ' references fields are already updated.', 'success')
+                    return;
+                  }
+
+                  let requestObject = {
+                    qs: {
+                      locale: lang
+                    },
+                    json: {
+                      entry: entry
+                    }
+                  }
+
+                  await client.stack({ api_key: config.target_stack, management_token: config.management_token }).contentType(ctUid).entry(entry.uid).fetch(requestObject.qs)
+                    .then(entryResponse => {
+                      Object.assign(entryResponse, _.cloneDeep(entry))
+                      delete entryResponse.publish_details
+                      return entryResponse.update()
+                    })
+                    .then(response => {
+                      for (let j = 0; j < entries.length; j++) {
+                        if (entries[j].uid === response.uid) {
+                          entries[j] = response
+                          break;
+                        }
+                      }
+                      if (config.entriesPublish) {
+                        if (entry.publish_details.length > 0) {
+                          let entryUid = response
+                          return self.publish(entryUid.uid, ctUid, lang, entry).then(function () {
+                            return
+                          })
+                        }
+                      }
+                      refsUpdatedUids.push(response.uid)
+                    })
+                    .catch(function (error) {
+                      addlogs(config, chalk.red('Entry Uid: ' + entry.uid + ' of Content Type: ' + ctUid +
+                        ' failed to update in locale: ' + lang), 'error')
+
+                      addlogs(config, error, 'error')
+                      refsUpdateFailed.push({
+                        content_type: ctUid,
+                        entry: entry,
+                        locale: lang,
+                        error: error
+                      })
+                    })
+                }
+                // , {
+                //   concurrency: reqConcurrency
+                // }).then(function () {
+                //   // batch completed successfully
+                helper.writeFile(path.join(eFolderPath, 'success.json'), entries)
+                helper.writeFile(path.join(eFolderPath, 'refsUpdatedUids.json'), refsUpdatedUids)
+                helper.writeFile(path.join(eFolderPath, 'refsUpdateFailed.json'), refsUpdateFailed)
+                addlogs(config, 'Completed batch no: ' + (index + 1) + ' successfully!', 'success')
+              } catch (error) {
+                addlogs(config, chalk.red('Failed at batch no: ' + (index + 1)), 'error')
+                throw error
+              }
+              // }).catch(function (error) {
+              //   // error while executing entry in batch
+              //   addlogs(config, chalk.red('Failed at batch no: ' + (index + 1)), 'error')
+              //   throw error
+              // })
+            }
+            addlogs(config, 'Imported entries of Content Type: \'' + ctUid + '\' in language: \'' + lang +
+              '\' successfully!', 'success')
+          } catch (e) {
+            addlogs(config, chalk.red('Failed while importing entries of Content Type: \'' + ctUid + '\' in language: \'' +
+              lang + '\' successfully!'), 'error')
+            throw e
+          }
+          // }).catch(function (error) {
+          //   // error while updating entries with references
+          //   addlogs(config, chalk.red('Failed while importing entries of Content Type: \'' + ctUid + '\' in language: \'' +
+          //                 lang + '\' successfully!'), 'error')
+          //   throw error
+          // })
+        }
+        // , {
+        //   concurrency: reqConcurrency
+        // }).then(function () {
+        //   // completed updating entry references
         addlogs(config, chalk.green('Imported entries in \'' + lang + '\' language successfully!'), 'success')
         return resolve()
-      }).catch(function (error) {
-        // error while updating entry references
+      } catch (e) {
         addlogs(config, chalk.red('Failed to import entries in ' + lang + ' language'), 'error')
-        return reject(error)
-      })
+        return reject(e)
+      }
+      // }).catch(function (error) {
+      //   // error while updating entry references
+      //   addlogs(config, chalk.red('Failed to import entries in ' + lang + ' language'), 'error')
+      //   return reject(error)
+      // })
     })
   },
   supressFields: function () {
@@ -596,29 +608,37 @@ importEntries.prototype = {
       }
 
       helper.writeFile(modifiedSchemaPath, modifiedSchemas)
-
-      return Promise.map(supressedSchemas, function (schema) {
-
-        client.stack({api_key: config.target_stack, management_token: config.management_token}).contentType(schema.uid).fetch()
-        .then(contentTypeResponse => {       
-          Object.assign(contentTypeResponse, _.cloneDeep(schema))
-          return contentTypeResponse.update()
-        })
-        .then(UpdatedcontentType => {
-          return
-        }).catch(function (error) {
-          addlogs(config, chalk.red('Failed to modify mandatory field of \'' + schema.uid + '\' content type'), 'error')
-          throw error
-        })
-        // update 5 content types at a time
-      }, {
-        concurrency: reqConcurrency
-      }).then(function () {
+      try {
+        // return Promise.map(supressedSchemas, function (schema) {
+        // supressedSchemas.forEach(schema => {
+        for (let i = 0; i < supressedSchemas.length; i++) {
+          let schema = supressedSchemas[i]
+          client.stack({ api_key: config.target_stack, management_token: config.management_token }).contentType(schema.uid).fetch()
+            .then(contentTypeResponse => {
+              Object.assign(contentTypeResponse, _.cloneDeep(schema))
+              return contentTypeResponse.update()
+            })
+            .then(UpdatedcontentType => {
+              return
+            }).catch(function (error) {
+              addlogs(config, chalk.red('Failed to modify mandatory field of \'' + schema.uid + '\' content type'), 'error')
+              throw error
+            })
+          // update 5 content types at a time
+        }
         return resolve()
-      }).catch(function (error) {
+      } catch (e) {
         addlogs(config, chalk.red('Error while supressing mandatory field schemas'), 'error')
-        return reject(error)
-      })
+        return reject(e)
+      }
+      // , {
+      //   concurrency: reqConcurrency
+      // }).then(function () {
+      //   return resolve()
+      // }).catch(function (error) {
+      //   addlogs(config, chalk.red('Error while supressing mandatory field schemas'), 'error')
+      //   return reject(error)
+      // })
     })
   },
   fetchEntry: function (query) {
@@ -633,24 +653,24 @@ importEntries.prototype = {
         }
       }
 
-      return client.stack({ api_key: config.target_stack, management_token: config.management_token}).contentType(query.content_type).entry().query(requestObject.qs).find()
-      .then(function (response) {
-        if (!response.body.entries.length) {
-          addlogs(config, 'Unable to map entry WO uid: ' + query.entry.uid, 'error')
-         // log.debug('Request:\n' + JSON.stringify(requestObject))
-          self.failedWO.push(query)
+      return client.stack({ api_key: config.target_stack, management_token: config.management_token }).contentType(query.content_type).entry().query(requestObject.qs).find()
+        .then(function (response) {
+          if (!response.body.entries.length) {
+            addlogs(config, 'Unable to map entry WO uid: ' + query.entry.uid, 'error')
+            // log.debug('Request:\n' + JSON.stringify(requestObject))
+            self.failedWO.push(query)
+            return resolve()
+          }
+          self.mappedUids[query.entry.uid] = response.body.entries[0].uid
+          let _ePath = path.join(entryMapperPath, query.locale, query.content_type, 'success.json')
+          let entries = helper.readFile(_ePath)
+          entries.push(query.entry)
+          helper.writeFile(_ePath, entries)
+          addlogs(config, 'Completed mapping entry wo uid: ' + query.entry.uid + ': ' + response.body.entries[0].uid, 'success')
           return resolve()
-        }
-        self.mappedUids[query.entry.uid] = response.body.entries[0].uid
-        let _ePath = path.join(entryMapperPath, query.locale, query.content_type, 'success.json')
-        let entries = helper.readFile(_ePath)
-        entries.push(query.entry)
-        helper.writeFile(_ePath, entries)
-        addlogs(config, 'Completed mapping entry wo uid: ' + query.entry.uid + ': ' + response.body.entries[0].uid, 'success')
-        return resolve()
-      }).catch(function () {
-        return resolve()
-      })
+        }).catch(function () {
+          return resolve()
+        })
     })
   },
   unSupressFields: function () {
@@ -668,25 +688,27 @@ importEntries.prototype = {
         updatedExtensionUidsSchemas.push(_contentTypeSchema)
       }
 
-      return Promise.map(updatedExtensionUidsSchemas, function (schema) {
-       client.stack({api_key: config.target_stack, management_token: config.management_token}).contentType(schema.uid).fetch()
-        .then(contentTypeResponse => {
-          contentTypeResponse.schema = schema.schema
-            contentTypeResponse.update()
-          .then(UpdatedcontentType => {
-            modifiedSchemasUids.push(schema.uid)
-            //addlogs(config, (chalk.white('Content type: \'' + schema.uid + '\' has been restored to its previous glory!'))
-            return
-          }).catch(function (error) {
-            addlogs(config, chalk.red('Failed to re-update ' + schema.uid), 'error')
-            addlogs(config, error, 'error')
-          })
-        }).catch(function (error) {
-          addlogs(config, error, 'error') 
-        })
-      }, {
-        concurrency: reqConcurrency
-      }).then(function () {
+      // return Promise.map(updatedExtensionUidsSchemas, function (schema) {
+      try {
+        // updatedExtensionUidsSchemas.forEach(schema => {
+        for (let i = 0; i < updatedExtensionUidsSchemas.length; i++) {
+          let schema = updatedExtensionUidsSchemas[i]
+          await client.stack({ api_key: config.target_stack, management_token: config.management_token }).contentType(schema.uid).fetch()
+            .then(contentTypeResponse => {
+              contentTypeResponse.schema = schema.schema
+              contentTypeResponse.update()
+                .then(UpdatedcontentType => {
+                  modifiedSchemasUids.push(schema.uid)
+                  //addlogs(config, (chalk.white('Content type: \'' + schema.uid + '\' has been restored to its previous glory!'))
+                  return
+                }).catch(function (error) {
+                  addlogs(config, chalk.red('Failed to re-update ' + schema.uid), 'error')
+                  addlogs(config, error, 'error')
+                })
+            }).catch(function (error) {
+              addlogs(config, error, 'error')
+            })
+        }
         for (let i = 0; i < modifiedSchemas.length; i++) {
           if (modifiedSchemasUids.indexOf(modifiedSchemas[i].uid) !== -1) {
             modifiedSchemas.splice(i, 1)
@@ -697,15 +719,31 @@ importEntries.prototype = {
         helper.writeFile(modifiedSchemaPath, _.compact(modifiedSchemas))
         addlogs(config, 'Re-modified content type schemas to their original form!', 'success')
         return resolve()
-      }).catch(function (error) {
-        // failed to update modified schemas back to their original form
-        return reject(error)
-      })
+      } catch (e) {
+        return reject(e)
+      }
+      // , {
+      //   concurrency: reqConcurrency
+      // }).then(function () {
+      //   for (let i = 0; i < modifiedSchemas.length; i++) {
+      //     if (modifiedSchemasUids.indexOf(modifiedSchemas[i].uid) !== -1) {
+      //       modifiedSchemas.splice(i, 1)
+      //       i--
+      //     }
+      //   }
+      //   // re-write, in case some schemas failed to update
+      //   helper.writeFile(modifiedSchemaPath, _.compact(modifiedSchemas))
+      //   addlogs(config, 'Re-modified content type schemas to their original form!', 'success')
+      //   return resolve()
+      // }).catch(function (error) {
+      //   // failed to update modified schemas back to their original form
+      //   return reject(error)
+      // })
     })
   },
   removeBuggedEntries: function () {
     let self = this
-    return new Promise(function (resolve, reject) {
+    return new Promise(async function (resolve, reject) {
       let entries = helper.readFile(uniqueUidMapperPath)
       let bugged = []
       let removed = []
@@ -718,34 +756,24 @@ importEntries.prototype = {
         }
       }
 
-      return Promise.map(bugged, function (entry) {
-        // let requestObject = {
-        //   uri: self.requestOptionTemplate.uri + entry.content_type + config.apis.entries + self.mappedUids[
-        //   entry.uid],
-        //   method: 'DELETE',
-        //   qs: {
-        //     locale: masterLanguage.code
-        //   },
-        //   headers: self.requestOptionTemplate.headers,
-        //   json: true
-        // }
+      // return Promise.map(bugged, function (entry) {
+      try {
+        // bugged.forEach(entry => {
+        for (let i = 0; i < bugged.length; i++) {
+          let entry = bugged[i]
 
-        return client.stack({api_key: config.source_stack, management_token: config.management_token}).contentType(entry.content_type).entry(self.mappedUids[entry.uid]).delete({locale: masterLanguage.code})
-        .then(function () {
-          removed.push(self.mappedUids[entry.uid])
-          addlogs(config, 'Removed bugged entry from master ' + JSON.stringify(entry), 'success')      
-        })
-        .catch(function (error) {
-          addlogs(config, chalk.red('Failed to remove bugged entry from master language'), 'error')
-          addlogs(config, error, 'error')
-          addlogs(config, JSON.stringify(entry), 'error')
-                    
-        })
+          return client.stack({ api_key: config.source_stack, management_token: config.management_token }).contentType(entry.content_type).entry(self.mappedUids[entry.uid]).delete({ locale: masterLanguage.code })
+            .then(function () {
+              removed.push(self.mappedUids[entry.uid])
+              addlogs(config, 'Removed bugged entry from master ' + JSON.stringify(entry), 'success')
+            })
+            .catch(function (error) {
+              addlogs(config, chalk.red('Failed to remove bugged entry from master language'), 'error')
+              addlogs(config, error, 'error')
+              addlogs(config, JSON.stringify(entry), 'error')
 
-      }, {
-        concurrency: reqConcurrency
-      }).then(function () {
-
+            })
+        }
         for (let i = 0; i < bugged.length; i++) {
           if (removed.indexOf(bugged[i].uid) !== -1) {
             bugged.splice(i, 1)
@@ -758,15 +786,34 @@ importEntries.prototype = {
 
         addlogs(config, chalk.green('The stack has been eradicated from bugged entries!'), 'success')
         return resolve()
-      }).catch(function (error) {
-        // error while removing bugged entries from stack
-        return reject(error)
-      })
+      } catch (e) {
+        return reject(e)
+      }
+      // , {
+      //   concurrency: reqConcurrency
+      // }).then(function () {
+
+      //   for (let i = 0; i < bugged.length; i++) {
+      //     if (removed.indexOf(bugged[i].uid) !== -1) {
+      //       bugged.splice(i, 1)
+      //       i--
+      //     }
+      //   }
+
+      //   helper.writeFile(path.join(entryMapperPath, 'removed-uids.json'), removed)
+      //   helper.writeFile(path.join(entryMapperPath, 'pending-uids.json'), bugged)
+
+      //   addlogs(config, chalk.green('The stack has been eradicated from bugged entries!'), 'success')
+      //   return resolve()
+      // }).catch(function (error) {
+      //   // error while removing bugged entries from stack
+      //   return reject(error)
+      // })
     })
   },
   field_rules_update: function (schema) {
     let self = this
-    return new Promise(function (resolve, reject) {
+    return new Promise(async function (resolve, reject) {
       if (schema.field_rules) {
         let field_rules_array = []
         for (let k = 0; k < schema.field_rules.length; k++) {
@@ -793,13 +840,14 @@ importEntries.prototype = {
         console.log('field_rules is not available')
       }
 
-      return client.stack({api_key: config.target_stack, management_token: config.management_token}).contentType(schema.uid).fetch()
-      .then(contentTypeResponse => {
-        contentTypeResponse.schema = schema.schema
-        contentTypeResponse.update()
-        return resolve();
-      }).catch(function (error) {
-      })
+      await client.stack({ api_key: config.target_stack, management_token: config.management_token }).contentType(schema.uid).fetch()
+        .then(contentTypeResponse => {
+          contentTypeResponse.schema = schema.schema
+          contentTypeResponse.update()
+          return resolve();
+        }).catch(function (error) {
+          return reject(error)
+        })
     })
   },
   publish: function (eUid, ctUid, lang, entryObj) {
@@ -807,9 +855,9 @@ importEntries.prototype = {
     let envId = []
     let locales = []
     let requestObject = {
-        entry: {}
+      entry: {}
     }
-    
+
     return new Promise(function (resolve, reject) {
       _.forEach(entryObj.publish_details, function (pubObject) {
         if (self.environment.hasOwnProperty(pubObject.environment)) {
@@ -822,16 +870,16 @@ importEntries.prototype = {
       })
       requestObject.entry['environments'] = envId
       requestObject.entry['locales'] = locales
-      
-      client.stack({api_key: config.target_stack, management_token: config.management_token}).contentType(ctUid).entry(eUid).publish({ publishDetails: requestObject.entry, locale: lang})
-      .then(result => {
-        addlogs(config, chalk.green('Entry ' + eUid + ' published successfully in ' + ctUid + ' content type'), 'success')
-        return resolve()
-      })
-      .catch(function (err) {
-        let error = JSON.parse(err.message)
-        return reject(error)
-      })
+
+      client.stack({ api_key: config.target_stack, management_token: config.management_token }).contentType(ctUid).entry(eUid).publish({ publishDetails: requestObject.entry, locale: lang })
+        .then(result => {
+          addlogs(config, chalk.green('Entry ' + eUid + ' published successfully in ' + ctUid + ' content type'), 'success')
+          return resolve()
+        })
+        .catch(function (err) {
+          let error = JSON.parse(err.message)
+          return reject(error)
+        })
     })
   },
 }

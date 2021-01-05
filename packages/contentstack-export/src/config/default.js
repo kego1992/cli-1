@@ -1,5 +1,5 @@
 module.exports = {
-  versioning: false,
+  versioning: true,
   modules: {
     types: [
       'stack',

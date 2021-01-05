@@ -7,7 +7,6 @@
 const fs = require('fs')
 const path = require('path')
 const _ = require('lodash')
-const Promise = require('bluebird')
 const chalk = require('chalk')
 const mkdirp = require('mkdirp')
 const {addlogs} = require('../util/log')
@@ -26,6 +25,7 @@ let entryFolderPath
 let localesFilePath
 let schemaFilePath
 let client
+let entryList = []
 
 function exportEntries() {
   this.requestOptions = {
@@ -39,7 +39,7 @@ function exportEntries() {
   }
 }
 
-exportEntries.prototype.start = function (credentialConfig) {
+exportEntries.prototype.start = async function (credentialConfig) {
   let self = this
   config = credentialConfig
   entryFolderPath = path.resolve(config.data, config.modules.entries.dirName)
@@ -47,10 +47,11 @@ exportEntries.prototype.start = function (credentialConfig) {
   schemaFilePath = path.resolve(config.data,  config.modules.content_types.dirName, 'schema.json')
   client = stack.Client(config)
   addlogs(config, 'Starting entry migration', 'success')
-  return new Promise(function (resolve, reject) {
+  return new Promise(async function (resolve, reject) {
     locales = helper.readFile(localesFilePath)
     let apiBucket = []
     content_types = helper.readFile(schemaFilePath)
+
     if (content_types.length !== 0) {
       content_types.forEach(content_type => {
         if (Object.keys(locales).length !== 0) {
@@ -66,23 +67,24 @@ exportEntries.prototype.start = function (credentialConfig) {
           locale: config.master_locale.code,
         })
       })
-      return Promise.map(apiBucket, function (apiDetails) {
-        return self.getEntries(apiDetails)
-      }, {
-        concurrency: 1,
-      }).then(function () {
+      for (let i=0; i < apiBucket.length; i++) {
+        entryList.push(self.getEntries(apiBucket[i]))
+      }
+      Promise.all(entryList)
+      .then((result) => {
         addlogs(config, 'Entry migration completed successfully', 'success')
         return resolve()
-      }).catch(reject)
+    }).catch(reject)
+    } else {
+      addlogs(config, 'No content_types were found in the Stack', 'success')
+      return resolve()
     }
-    addlogs(config, 'No content_types were found in the Stack', 'success')
-    return resolve()
   })
 }
 
-exportEntries.prototype.getEntry = function (apiDetails) {
+exportEntries.prototype.getEntry = async function (apiDetails) {
   let self = this
-  return new Promise(function (resolve, reject) {
+  return new Promise(async function (resolve, reject) {
     let queryRequestObject = {
       locale: apiDetails.locale,
       except: {
@@ -112,13 +114,12 @@ exportEntries.prototype.getEntry = function (apiDetails) {
   })
 }
 
-exportEntries.prototype.getEntries = function (apiDetails) {
+exportEntries.prototype.getEntries = async function (apiDetails) {
   let self = this
-  return new Promise(function (resolve, reject) {
+  return new Promise(async function (resolve, reject) {
     if (typeof apiDetails.skip !== 'number') {
       apiDetails.skip = 0
     }
-
     let queryrequestObject = {
       locale: apiDetails.locale,
       skip: apiDetails.skip,
@@ -138,47 +139,48 @@ exportEntries.prototype.getEntries = function (apiDetails) {
       let entriesFilePath = path.join(entryFolderPath, apiDetails.content_type, apiDetails.locale + '.json')
       let entries = helper.readFile(entriesFilePath)
       entries = entries || {}
-      entriesList.items.forEach(function (entry) {
+      entriesList.items.forEach(async function (entry) {
         invalidKeys.forEach(e => delete entry[e])
         entries[entry.uid] = entry
       })
       helper.writeFile(entriesFilePath, entries)
-
       if (typeof config.versioning === 'boolean' && config.versioning) {
         for (let locale in locales) {
           // make folders for each language
-          content_types.forEach(function (content_type) {
+          content_types.forEach(async function (content_type) {
             // make folder for each content type
             let versionedEntryFolderPath = path.join(entryFolderPath, locales[locale].code,content_type.uid)
             mkdirp.sync(versionedEntryFolderPath)
           })
         }
-        return Promise.map(entriesList.items, function (entry) {
+
+     try {
+        for (let i = 0; i < entriesList.items.length; i++) {
           let entryDetails = {
             content_type: apiDetails.content_type,
-            uid: entry.uid,
-            version: entry._version,
+            uid: entriesList.items[i].uid,
+            version: entriesList.items[i]._version,
             locale: apiDetails.locale,
           }
-          return self.getEntry(entryDetails).then(function () {
-
-          }).catch(reject)
-        }, {
-          concurrency: 1,
-        }).then(function () {
-          if (apiDetails.skip > entriesList.items.length) {
-            addlogs(config, 'Completed fetching ' + apiDetails.content_type +
-              ' content type\'s entries in ' + apiDetails.locale + ' locale', 'success')
-            return resolve()
+          self.getEntry(entryDetails).then(async function () {
+          })
+        }
+        if (apiDetails.skip > entriesList.items.length) {
+          addlogs(config, 'Completed fetching ' + apiDetails.content_type +
+            ' content type\'s entries in ' + apiDetails.locale + ' locale', 'success')
+          return resolve()
           }
           apiDetails.skip += limit
-          return self.getEntries(apiDetails).then(function () {
+          return self.getEntries(apiDetails).then(async function () {
             return resolve()
           }).catch(function (error) {
             return reject(error)
           })
-        })
+      } catch(e) {
+        console.log(e)
       }
+      }
+
       if (apiDetails.skip > entriesList.items.length) {
         addlogs(config, 'Completed exporting ' + apiDetails.content_type +
             ' content type\'s entries in ' + apiDetails.locale + ' locale', 'success')
@@ -190,6 +192,7 @@ exportEntries.prototype.getEntries = function (apiDetails) {
       .catch(reject)
     }).catch(error => {
       addlogs(config, error, 'error')
+      return reject()
     })
   })
 }

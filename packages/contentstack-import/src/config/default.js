@@ -6,7 +6,7 @@ module.exports = {
   host: 'https://api.contentstack.io/v3',
   modules: {
     types: [
-      'locales',
+     'locales',
       'environments',
       'extensions',
       'webhooks',
@@ -328,6 +328,6 @@ module.exports = {
   preserveStackVersion: false,
   entriesPublish: true,
   concurrency: 1
- // ,useBackedupDir: './_backup_434'
+  // ,useBackedupDir: ''
   // backupConcurrency: 10,
 }

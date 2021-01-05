@@ -7,11 +7,10 @@
 const mkdirp = require('mkdirp')
 const fs = require('fs')
 const path = require('path')
-const Promise = require('bluebird')
 
 const request = require('../util/request')
 const helper = require('../util/fs')
-let {addlogs} = require('../util/log')
+let { addlogs } = require('../util/log')
 let util = require('../util/')
 const chalk = require('chalk')
 let stack = require('../util/contentstack-management-sdk')
@@ -25,7 +24,7 @@ let envSuccessPath
 let envFailsPath
 let client
 
-function importEnvironments () {
+function importEnvironments() {
   this.fails = []
   this.success = []
   this.envUidMapper = {}
@@ -49,35 +48,37 @@ importEnvironments.prototype = {
     }
 
     mkdirp.sync(envMapperPath)
-    return new Promise(function (resolve, reject) {
+    return new Promise(async function (resolve, reject) {
       if (self.environments === undefined) {
         addlogs(config, chalk.yellow('No Environment Found'), 'error')
         return resolve()
       }
 
       let envUids = Object.keys(self.environments)
-      return Promise.map(envUids, function (envUid) {
+      // return Promise.map(envUids, function (envUid) {
+      for (let i = 0; i < envUids.length; i++) {
+        let envUid = envUids[i]
         let env = self.environments[envUid]
         if (!self.envUidMapper.hasOwnProperty(envUid)) {
           let requestOption = {
-              environment: env,
+            environment: env,
           }
 
-      return client.stack({api_key: config.target_stack, management_token: config.management_token}).environment().create(requestOption)
-           .then(environment => {
-            self.success.push(environment.items)
-            self.envUidMapper[envUid] = environment.uid
-            helper.writeFile(envUidMapperPath, self.envUidMapper)
-            return
-          }).catch(function (err) {
-            let error = JSON.parse(err.message)
-            if (error.errors.name) {
-              addlogs(config, chalk.white('Environment: \'' + env.name + '\' already exists'), 'error')
-            } else {
-              addlogs(config, chalk.white('Environment: \'' + env.name + '\' failed to be import\n ' + JSON.stringify(error.errors)), 'error')
-            }
-            return
-          })
+          await client.stack({ api_key: config.target_stack, management_token: config.management_token }).environment().create(requestOption)
+            .then(environment => {
+              self.success.push(environment.items)
+              self.envUidMapper[envUid] = environment.uid
+              helper.writeFile(envUidMapperPath, self.envUidMapper)
+              return
+            }).catch(function (err) {
+              let error = JSON.parse(err.message)
+              if (error.errors.name) {
+                addlogs(config, chalk.white('Environment: \'' + env.name + '\' already exists'), 'error')
+              } else {
+                addlogs(config, chalk.white('Environment: \'' + env.name + '\' failed to be import\n ' + JSON.stringify(error.errors)), 'error')
+              }
+              return
+            })
         } else {
           // the environment has already been created
           addlogs(config, chalk.white('The environment: \'' + env.name +
@@ -85,19 +86,11 @@ importEnvironments.prototype = {
           return
         }
         // import 2 environments at a time
-      }, {
-        concurrency: 2,
-      }).then(function () {
-        // environments have imported successfully
-        helper.writeFile(envSuccessPath, self.success)
-        addlogs(config, chalk.green('Environments have been imported successfully!'), 'success')
-        return resolve()
-      }).catch(function (error) {
-        // error while importing environments
-        helper.writeFile(envFailsPath, self.fails)
-        addlogs(config, chalk.red('Environment import failed'), 'error')
-        return reject(error)
-      })
+      }
+      //   // environments have imported successfully
+      helper.writeFile(envSuccessPath, self.success)
+      addlogs(config, chalk.green('Environments have been imported successfully!'), 'success')
+      return resolve()
     })
   },
 }

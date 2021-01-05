@@ -7,11 +7,10 @@
 const mkdirp = require('mkdirp')
 const fs = require('fs')
 const path = require('path')
-const Promise = require('bluebird')
 const chalk = require('chalk')
 
 const helper = require('../util/fs')
-const {addlogs} = require('../util/log')
+const { addlogs } = require('../util/log')
 const util = require('../util')
 
 let config = util.getConfig()
@@ -20,12 +19,12 @@ const extensionsConfig = config.modules.extensions
 const stack = require('../util/contentstack-management-sdk')
 let extensionsFolderPath
 let extMapperPath
-let extUidMapperPath 
-let extSuccessPath 
+let extUidMapperPath
+let extSuccessPath
 let extFailsPath
 let client
 
-function importExtensions () {
+function importExtensions() {
   this.fails = []
   this.success = []
   this.extUidMapper = {}
@@ -51,47 +50,42 @@ importExtensions.prototype = {
 
     mkdirp.sync(extMapperPath)
 
-    return new Promise(function (resolve, reject) {
+    return new Promise(async function (resolve, reject) {
       if (self.extensions === undefined) {
         addlogs(config, chalk.white('No Extensions Found'), 'success')
         return resolve()
       }
       let extUids = Object.keys(self.extensions)
-      return Promise.map(extUids, function (extUid) {
+      // return Promise.map(extUids, function (extUid) {
+      for (let i = 0; i < extUids.length; i++) {
+        let extUid = extUids[i]
         let ext = self.extensions[extUid]
         if (!self.extUidMapper.hasOwnProperty(extUid)) {
-      return client.stack({api_key: config.target_stack, management_token: config.management_token}).extension().create({extension: ext})
-          .then(response => {
-            self.success.push(response)
-            self.extUidMapper[extUid] = response.uid
-            helper.writeFile(extUidMapperPath, self.extUidMapper)
-          }).catch(function (err) {
-            let error = JSON.parse(err.message)
-            self.fails.push(ext)
-            if (error.errors.title) {
-              addlogs(config, chalk.white('Extension: \'' + ext.title + '\' already exists'), 'success')
-            } else {
-              addlogs(config, chalk.white('Extension: \'' + ext.title + '\' failed to be import\n ' + JSON.stringify(error.errors)), 'error')
-            }
-          })
+          await client.stack({ api_key: config.target_stack, management_token: config.management_token }).extension().create({ extension: ext })
+            .then(response => {
+              self.success.push(response)
+              self.extUidMapper[extUid] = response.uid
+              helper.writeFile(extUidMapperPath, self.extUidMapper)
+              return
+            }).catch(function (err) {
+              let error = JSON.parse(err.message)
+              self.fails.push(ext)
+              if (error.errors.title) {
+                addlogs(config, chalk.white('Extension: \'' + ext.title + '\' already exists'), 'success')
+              } else {
+                addlogs(config, chalk.white('Extension: \'' + ext.title + '\' failed to be import\n ' + JSON.stringify(error.errors)), 'error')
+              }
+              return
+            })
         }
         // the extensions has already been created
         addlogs(config, chalk.white('The extension: \'' + ext.name +
-            '\' already exists. Skipping it to avoid duplicates!'), 'success')
+          '\' already exists. Skipping it to avoid duplicates!'), 'success')
         // import 2 extensions at a time
-      }, {
-        concurrency: reqConcurrency,
-      }).then(function () {
-        // extensions have imported successfully
-        helper.writeFile(extSuccessPath, self.success)
-        addlogs(config, chalk.green('Extensions have been imported successfully!'), 'success')
-        return resolve()
-      }).catch(function (error) {
-        // error while importing extensions
-        helper.writeFile(extFailsPath, self.fails)
-        addlogs(config, chalk.red('Extension import failed'), 'error')
-        return reject(error)
-      })
+      }
+      helper.writeFile(extSuccessPath, self.success)
+      addlogs(config, chalk.green('Extensions have been imported successfully!'), 'success')
+      return resolve()
     })
   },
 }

@@ -8,7 +8,6 @@
 let mkdirp = require('mkdirp')
 let fs = require('fs')
 let path = require('path')
-let Promise = require('bluebird')
 let chalk = require('chalk')
 
 let helper = require('../util/fs')
@@ -51,13 +50,15 @@ importLanguages.prototype = {
       self.langUidMapper = self.langUidMapper || {}
     }
 
-    return new Promise(function (resolve, reject) {
+    return new Promise(async function (resolve, reject) {
       if (self.languages === undefined) {
         addlogs(config, chalk.white('No Languages Found'), 'error')
         return resolve()
       }
       let langUids = Object.keys(self.languages)
-      return Promise.map(langUids, function (langUid) {
+      try {
+        for (var i = 0; i < langUids.length; i++) {
+        let langUid = langUids[i]
         let lang = self.languages[langUid]
         if (!self.langUidMapper.hasOwnProperty(langUid) && (lang.code !== masterLanguage)) {
           let requestOption = {
@@ -67,20 +68,24 @@ importLanguages.prototype = {
             },
           }
           
-         return client.stack({api_key: config.target_stack, management_token: config.management_token}).locale().create(requestOption)
-          .then(locale => {                    
-            self.update_locales(lang)
-            self.success.push(locale.items)
-            self.langUidMapper[langUid] = locale.uid
-            helper.writeFile(langUidMapperPath, self.langUidMapper)
-          }).catch(function (err) {
-            let error = JSON.parse(err.message)
-            if (error.hasOwnProperty('errorCode') && error.errorCode === 247) {
-              addlogs(config, error.errors.code[0], 'success')
+        await client.stack({api_key: config.target_stack, management_token: config.management_token}).locale().create(requestOption)
+          .then(async locale => {
+            await self.update_locales(lang).then(function() {
+            // updatelocale.then(function() {
+              self.success.push(locale.items)
+              self.langUidMapper[langUid] = locale.uid
+              helper.writeFile(langUidMapperPath, self.langUidMapper)
               return
-            }
-            self.fails.push(lang)
-            addlogs(config, chalk.red('Language: \'' + lang.code + '\' failed to be import\n'), 'error')
+            }).catch(function(err) {
+              let error = JSON.parse(err.message)
+              addlogs(config, error.errors.code[0], 'success')
+              self.fails.push(lang)
+              return
+            })
+          }).catch(function (error) {
+              addlogs(config, error.errors.code[0], 'success')
+              self.fails.push(lang)
+              return
           })
         } else {
           // the language has already been created
@@ -88,40 +93,31 @@ importLanguages.prototype = {
         }
 
         // import 2 languages at a time
-      }, {
-        concurrency: reqConcurrency,
-      }).then(function () {
-        // languages have imported successfully
-        helper.writeFile(langSuccessPath, self.success)
-        addlogs(config, chalk.green('Languages have been imported successfully!'), 'success')
-        return resolve()
-      }).catch(function (error) {
-        // error while importing languages
-        helper.writeFile(langFailsPath, self.fails)
+      }
+      helper.writeFile(langSuccessPath, self.success)
+      addlogs(config, chalk.green('Languages have been imported successfully!'), 'success')
+      return resolve()
+      } catch(error) {
+        //helper.writeFile(langFailsPath, self.fails)
         addlogs(config, chalk.red('Language import failed'), 'error')
         return reject(error)
-      })
+      }  
     })
   },
   update_locales: function (lang) {
     let self = this
-  return client.stack({api_key: config.target_stack, management_token: config.management_token}).locale(lang.code).fetch()
-    // return request(requestOption)
-    .then(function (locale) {      
+  return new Promise(async function (resolve, reject) {
+  await client.stack({api_key: config.target_stack, management_token: config.management_token}).locale(lang.code).fetch()
+    .then(locale => {      
       locale.code = lang.code
       locale.fallback_locale = lang.fallback_locale
       locale.name = lang.name
-      return locale.update()
+      locale.update()
+      return resolve()
     }).catch(function (error) {
-      // let error = JSON.parse(err.message)
-      if (error.hasOwnProperty('errorCode') && error.errorCode === 247) {
-        addlogs(config, error.errors.code[0], 'error')
-        return
-      }
-      self.fails.push(lang)
-      addlogs(config, 'Language: \'' + lang.code + '\' failed to update\n', 'error')
-      return
+        return reject(error)
     })
+  })
   },
 }
 

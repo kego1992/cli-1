@@ -8,7 +8,6 @@ const nativeRequest = require('request')
 const mkdirp = require('mkdirp')
 const path = require('path')
 const fs = require('fs')
-const Promise = require('bluebird')
 const _ = require('lodash')
 const chalk = require('chalk')
 
@@ -48,7 +47,7 @@ ExportAssets.prototype = {
     // Create asset folder
     mkdirp.sync(assetsFolderPath)
     return new Promise(function (resolve, reject) {
-      return self.getAssetCount().then(function (count) {
+      return self.getAssetCount().then(async function (count) {
         if (typeof count !== 'number' || count === 0) {
           addlogs(config, 'There were no assets to be download', 'success')
           return resolve()
@@ -57,49 +56,33 @@ ExportAssets.prototype = {
         for (let i = 0; i <= count; i += bLimit) {
           assetBatches.push(i)
         }
-        return Promise.map(assetBatches, function (batch) {
-          return self.getAssetJSON(batch).then(function (assetsJSON) {
-            return Promise.map(assetsJSON, function (assetJSON) {
-              return self.getVersionedAssetJSON(assetJSON.uid, assetJSON._version).then(
-                function () {
+          for (var i= 0; i < assetBatches.length; i++) {
+            let batch = assetBatches[i]
+            await self.getAssetJSON(batch).then(async function (assetsJSON) {
+              for (var j=0; j < assetsJSON.length; j++) {
+                let assetJSON = assetsJSON[j]
+                await self.getVersionedAssetJSON(assetJSON.uid, assetJSON._version).then(function () {
                   self.assetContents[assetJSON.uid] = assetJSON
-                  // log.success(chalk.white('The following asset has been downloaded successfully: ' +
-                  //     assetJSON.uid))
                 }).catch(function (error) {
                 addlogs(self.configchalk.red('The following asset failed to download\n' + JSON.stringify(
                   assetJSON)))
                 addlogs(config, error, 'error')
               })
-            }, {
-              concurrency: vLimit,
-            }).then(function () {
+            }
               addlogs(config, 'Batch no ' + (batch + 1) + ' of assets is complete', 'success')
               helper.writeFile(assetContentsFile, self.assetContents)
-            }).catch(function (error) {
-              addlogs(config, 'Asset batch ' + (batch + 1) + ' failed to download', 'error')
-              addlogs(config, error, 'error')
-              // log this error onto a file - send over retries
-            })
           }).catch(function (error) {
             return reject(error)
           })
-        }, {
-          concurrency: 1,
-        }).then(function () {
-          return self.exportFolders().then(function () {
-            addlogs(config, chalk.green('Asset export completed successfully'), 'success')
-            return resolve()
+        }
+          await self.exportFolders().then(function () {
+            // folderExport.then(function () {
+          addlogs(config, chalk.green('Asset export completed successfully'), 'success')
+          return resolve()
           }).catch(function (error) {
-            return reject(error)
-          })
-        }).catch(function (error) {
-          addlogs(config, chalk.red('Asset export failed due to the following errrors ' + JSON.stringify(
-            error), 'error'))
           return reject(error)
         })
       }).catch(function (error) {
-        // addlogs(config, chalk.red('Failed to download assets due to the following error: ' + JSON.stringify(
-        //   error)));
         return reject(error)
       })
     })

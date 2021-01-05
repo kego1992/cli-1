@@ -7,7 +7,6 @@
 const mkdirp = require('mkdirp');
 const fs = require('fs');
 const path = require('path');
-const Promise = require('bluebird');
 const chalk = require('chalk');
 
 const helper = require('../util/fs');
@@ -48,14 +47,17 @@ importWebhooks.prototype = {
     }
     mkdirp.sync(webMapperPath);
 
-    return new Promise(function (resolve, reject) {
+    return new Promise(async function (resolve, reject) {
       if(self.webhooks == undefined) {
         addlogs(config, chalk.white('No Webhooks Found'), 'success');
         return resolve();
       }
       let webUids = Object.keys(self.webhooks);
-      return Promise.map(webUids, function (webUid) {
+      try {
+      for (var i=0; i < webUids.length; i++) {
+      // return Promise.map(webUids, function (webUid) {
         let web = self.webhooks[webUid];
+        let webUid = webUids[i]
         if (!self.webUidMapper.hasOwnProperty(webUid)) {
           let requestOption = {
             json: {
@@ -64,9 +66,9 @@ importWebhooks.prototype = {
           }
           
           // return self.createwebhooks(self.webhooks[webUid]);
-          return client.stack({api_key: config.target_stack, management_token: config.management_token}).webhook().create(requestOption.json)
+          await client.stack({api_key: config.target_stack, management_token: config.management_token}).webhook().create(requestOption.json)
           // return request(requestOption)
-          .then(function (response) {
+          .then(response => {
             self.success.push(response);
             self.webUidMapper[webUid] = response.uid;
             helper.writeFile(webUidMapperPath, self.webUidMapper);
@@ -84,19 +86,15 @@ importWebhooks.prototype = {
           return
         }
         // import 2 webhooks at a time
-      }, {
-        concurrency: reqConcurrency
-      }).then(function () {
-        // webhooks have imported successfully
+      }
         helper.writeFile(webSuccessPath, self.success);
         addlogs(config, chalk.green('Webhooks have been imported successfully!'), 'success')
         return resolve()
-      }).catch(function (error) {
-        // error while importing environments
+    } catch (error) {
         helper.writeFile(webFailsPath, self.fails);
         addlogs(config, chalk.red('Webhooks import failed'), 'error')
         return reject(error)
-      })
+    }  
     })
   }
 };

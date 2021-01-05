@@ -7,7 +7,6 @@
 
 const mkdirp = require('mkdirp')
 const path = require('path')
-const Promise = require('bluebird')
 const fs = require('fs')
 const _ = require('lodash')
 const chalk = require('chalk')
@@ -19,6 +18,7 @@ const stack = require('../util/contentstack-management-sdk')
 
 let util = require('../util')
 let config = require('../../config/default')
+const { result } = require('lodash')
 const assetsConfig = config.modules.assets
 let assetBatchLimit = (assetsConfig.hasOwnProperty('batchLimit') && typeof assetBatchLimit === 'number') ?
     assetsConfig.assetBatchLimit : 2
@@ -26,6 +26,7 @@ let assetsFolderPath
 let mapperDirPath
 let environmentPath
 let client
+let batches = []
 
 function importAssets() {
   this.uidMapping = {}
@@ -66,86 +67,18 @@ importAssets.prototype = {
         return resolve()
       }
       let assetUids = Object.keys(self.assets)
-      let batches = []
       for (let i = 0; i < assetUids.length; i += assetBatchLimit) {
         batches.push(assetUids.slice(i, i + assetBatchLimit))
       }
 
-      return self.importFolders().then(function () {
-        return Promise.map(batches, function (batch, index) {
-          return Promise.map(batch, function (assetUid) {
-            if (self.uidMapping.hasOwnProperty(assetUid)) {
-              addlogs(config, 'Skipping upload of asset: ' + assetUid + '. Its mapped to: ' + self.uidMapping[
-              assetUid], 'success')
-              // the asset has been already imported
-              return
-            }
-            let currentAssetFolderPath = path.join(assetsFolderPath, assetUid)
-            if (fs.existsSync(currentAssetFolderPath)) {
-              // if this is true, means, the exported asset data is versioned
-              // hence, upload each asset with its version
-              if (config.versioning) {
-                return self.uploadVersionedAssets(assetUid, currentAssetFolderPath).then(function () {
-                }).catch(function (error) {
-                  addlogs(config, (chalk.red('Asset upload failed to import\n' + error), 'error'))
-                })
-              }
-              let assetPath = path.resolve(currentAssetFolderPath, self.assets[assetUid].filename)
-              let uidContainer = {}
-              let urlContainer = {}
-              if (self.assets[assetUid].parent_uid && typeof self.assets[assetUid].parent_uid === 'string') {
-                if (self.mappedFolderUids.hasOwnProperty(self.assets[assetUid].parent_uid)) {
-                  self.assets[assetUid].parent_uid = self.mappedFolderUids[self.assets[assetUid].parent_uid]
-                } else {
-                  addlogs(config, (self.assets[assetUid].parent_uid + ' parent_uid was not found! Thus, setting it as \'null\'', 'error'))
-                }
-              }
-
-              return self.uploadAsset(assetPath, self.assets[assetUid], uidContainer, urlContainer).then(function () {
-                self.uidMapping[assetUid] = uidContainer[assetUid]
-                self.urlMapping[self.assets[assetUid].url] = urlContainer[self.assets[
-                assetUid].url]
-
-                if (config.entriesPublish) {
-                  if (self.assets[assetUid].publish_details.length > 0) {
-                    let assetsUid = uidContainer[assetUid]
-                    if(self.assets[assetUid].publish_details.length !== 0 ) {
-                      return self.publish(assetsUid, self.assets[assetUid]).then(function () {
-                        return
-                      }).catch(error => {
-                        return
-                      })
-                    }
-                  }
-                }
-                return
-                // assetUid has been successfully uploaded
-                // log them onto /mapper/assets/success.json
-              }).catch(function (error) {
-                addlogs(config, chalk.red('Asset upload failed to import\n' + error, 'error'))
-                // asset failed to upload
-                // log them onto /mapper/assets/fail.json
-              })
-            }
-            addlogs(config, (currentAssetFolderPath + ' does not exist!'), 'error')
-          }, {
-            concurrency: assetBatchLimit,
-          }).then(function () {
-            helper.writeFile(self.uidMapperPath, self.uidMapping)
-            helper.writeFile(self.urlMapperPath, self.urlMapping)
-            // completed uploading assets
-            addlogs(config, 'Completed asset import of batch no: ' + (index + 1), 'success')
-            // TODO: if there are failures, retry
-          })
-        }, {
-          concurrency: 1,
-        }).then(function () {
-          addlogs(config, chalk.green('Asset import completed successfully!'), 'success')
-          // TODO: if there are failures, retry
-          return resolve()
-        }).catch(function () {
-          return reject()
+      return self.importFolders().then(async function () {
+        await self.batchLimit().then(async function () {
+            addlogs(config, chalk.green('Asset import completed successfully!'), 'success')
+            return resolve()
+        }).catch(err => {
+          return reject(err)
         })
+       
     }).catch(function (error) {
       return reject()
     })
@@ -175,35 +108,43 @@ importAssets.prototype = {
       let filesStreamed = []
       let uidContainer = {}
       let urlContainer = {}
-      return Promise.map(versionedAssetMetadata, function () {
+      // return Promise.map(versionedAssetMetadata, function () {
+        versionedAssetMetadata.forEach( async versionAsset => {
         let assetMetadata = versionedAssetMetadata[counter]
         let assetPath = path.join(assetFolderPath, assetMetadata.filename)
         if (++counter === 1) {
           // delete assetMetadata.uid;
-          return self.uploadAsset(assetPath, assetMetadata, uidContainer, urlContainer).then(function () {
+          await self.uploadAsset(assetPath, assetMetadata, uidContainer, urlContainer).then(function () {
             filesStreamed.push(assetMetadata.filename)
           }).catch(reject)
         }
-        return self.updateAsset(assetPath, assetMetadata, filesStreamed, uidContainer, urlContainer)
+        await self.updateAsset(assetPath, assetMetadata, filesStreamed, uidContainer, urlContainer)
         .then(function () {
           filesStreamed.push(assetMetadata.filename)
         }).catch(error => {          
         })
-      }, {
-        concurrency: 1,
-      }).then(function () {
+      })
         self.uidMapping[uid] = uidContainer[uid]
         for (let url in urlContainer) {
           self.urlMapping[url] = urlContainer[url]
         }
         // completed uploading all the versions of the asset
         return resolve()
-      }).catch(function (error) {
-        // failed to upload asset
-        // write it on fail logs, but do not stop the process
-        addlogs(config, chalk.red('Failed to upload asset\n' + error), 'error')
-        return resolve()
-      })
+      // , {
+      //   concurrency: 1,
+      // }).then(function () {
+      //   self.uidMapping[uid] = uidContainer[uid]
+      //   for (let url in urlContainer) {
+      //     self.urlMapping[url] = urlContainer[url]
+      //   }
+      //   // completed uploading all the versions of the asset
+      //   return resolve()
+      // }).catch(function (error) {
+      //   // failed to upload asset
+      //   // write it on fail logs, but do not stop the process
+      //   addlogs(config, chalk.red('Failed to upload asset\n' + error), 'error')
+      //   return resolve()
+      // })
     })
   },
   updateAsset: function (assetPath, metadata, filesStreamed, uidContainer, urlContainer) {
@@ -276,7 +217,7 @@ importAssets.prototype = {
 
   importFolders: function () {
       let self = this
-    return new Promise(function (resolve, reject) {
+    return new Promise(async function (resolve, reject) {
       let mappedFolderPath = path.resolve(config.data, 'mapper', 'assets', 'folder-mapping.json')
       self.folderDetails = helper.readFile(path.resolve(assetsFolderPath, 'folders.json'))
 
@@ -297,13 +238,15 @@ importAssets.prototype = {
       }
       self.buildFolderReqObjs(createdFolderUids, tree, null)
       let idx = 0
-      return Promise.map(self.folderBucket, function () {
+      // return Promise.map(self.folderBucket, function () {
+        // self.folderBucket.forEach(async result => {
+      for (let i = 0; i < self.folderBucket.length; i++) {
         let folder = self.folderBucket[idx]
         if (createdFolders.hasOwnProperty(folder.json.asset.parent_uid)) { 
           // replace old uid with new
           folder.json.asset.parent_uid = createdFolders[folder.json.asset.parent_uid]
         }        
-        return client.stack({api_key: config.target_stack, management_token: config.management_token}).asset().folder().create(folder.json)
+        await client.stack({api_key: config.target_stack, management_token: config.management_token}).asset().folder().create(folder.json)
         .then(response => {          
           addlogs(config, 'Created folder: \'' + folder.json.asset.name + '\'', 'success')
           // { oldUid: newUid }
@@ -318,15 +261,19 @@ importAssets.prototype = {
           }
           return reject(error)
         })
-      }, {
-        concurrency: 1,
-      }).then(function () {
+      }
         self.mappedFolderUids = helper.readFile(mappedFolderPath)
         // completed creating folders
         return resolve()
-      }).catch(function (error) {
-        return reject(error)
-      })
+      // , {
+      //   concurrency: 1,
+      // }).then(function () {
+      //   self.mappedFolderUids = helper.readFile(mappedFolderPath)
+      //   // completed creating folders
+      //   return resolve()
+      // }).catch(function (error) {
+      //   return reject(error)
+      // })
     })
   },
   buildFolderReqObjs: function (createdFolderUids, tree, parent_uid) {
@@ -413,6 +360,81 @@ importAssets.prototype = {
       })
     })
   },
+  batchLimit: function () {
+    let self = this
+    return new Promise(async function (resolve, reject) {
+      try {
+      // batches.forEach((batch, index) => {
+        for (let i = 0; i < batches.length; i++)  {
+          let batch = batches[i]
+          let index = i
+        //  return Promise.map(batches, function (batch, index) {
+          // batch.forEach(async assetUid => {
+            for (let j = 0; j < batch.length; j++) {
+              let assetUid = batch[j]
+            // return Promise.map(batch, function (assetUid) {
+              if (self.uidMapping.hasOwnProperty(assetUid)) {
+                addlogs(config, 'Skipping upload of asset: ' + assetUid + '. Its mapped to: ' + self.uidMapping[
+                assetUid], 'success')
+                // the asset has been already imported
+                return
+              }
+              let currentAssetFolderPath = path.join(assetsFolderPath, assetUid)
+              if (fs.existsSync(currentAssetFolderPath)) {
+                // if this is true, means, the exported asset data is versioned
+                // hence, upload each asset with its version
+                if (config.versioning) {
+                  return self.uploadVersionedAssets(assetUid, currentAssetFolderPath).then(function () {
+                  }).catch(function (error) {
+                    addlogs(config, (chalk.red('Asset upload failed to import\n' + error), 'error'))
+                  })
+                }
+                let assetPath = path.resolve(currentAssetFolderPath, self.assets[assetUid].filename)
+                let uidContainer = {}
+                let urlContainer = {}
+                if (self.assets[assetUid].parent_uid && typeof self.assets[assetUid].parent_uid === 'string') {
+                  if (self.mappedFolderUids.hasOwnProperty(self.assets[assetUid].parent_uid)) {
+                    self.assets[assetUid].parent_uid = self.mappedFolderUids[self.assets[assetUid].parent_uid]
+                  } else {
+                    addlogs(config, (self.assets[assetUid].parent_uid + ' parent_uid was not found! Thus, setting it as \'null\'', 'error'))
+                  }
+                }
+  
+                await self.uploadAsset(assetPath, self.assets[assetUid], uidContainer, urlContainer).then(async function () {
+                  self.uidMapping[assetUid] = uidContainer[assetUid]
+                  self.urlMapping[self.assets[assetUid].url] = urlContainer[self.assets[
+                  assetUid].url]
+  
+                  if (config.entriesPublish) {
+                    if (self.assets[assetUid].publish_details.length > 0) {
+                      let assetsUid = uidContainer[assetUid]
+                      if(self.assets[assetUid].publish_details.length !== 0 ) {
+                        await self.publish(assetsUid, self.assets[assetUid]).then(function () {
+                          return
+                        }).catch(error => {
+                          return
+                        })
+                      }
+                    }
+                  }
+                  return
+                }).catch(function (error) {
+                  addlogs(config, chalk.red('Asset upload failed to import\n' + error, 'error'))
+                })
+              }
+            //  addlogs(config, (currentAssetFolderPath + ' does not exist!'), 'error')
+            }
+              helper.writeFile(self.uidMapperPath, self.uidMapping)
+              helper.writeFile(self.urlMapperPath, self.urlMapping)
+              // completed uploading assets
+              addlogs(config, 'Completed asset import of batch no: ' + (index + 1), 'success')
+          }
+          return resolve()
+        } catch (e) {
+           return reject(e)
+        }
+    })
+  }
 }
 
 module.exports = new importAssets()
