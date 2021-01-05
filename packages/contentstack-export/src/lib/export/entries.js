@@ -53,7 +53,8 @@ exportEntries.prototype.start = async function (credentialConfig) {
     content_types = helper.readFile(schemaFilePath)
 
     if (content_types.length !== 0) {
-      content_types.forEach(content_type => {
+        for (let i = 0; i < content_types.length; i++) {
+          let content_type = content_types[i]
         if (Object.keys(locales).length !== 0) {
           for (let _locale in locales) {
             apiBucket.push({
@@ -66,7 +67,8 @@ exportEntries.prototype.start = async function (credentialConfig) {
           content_type: content_type.uid,
           locale: config.master_locale.code,
         })
-      })
+      }
+
       for (let i=0; i < apiBucket.length; i++) {
         entryList.push(self.getEntries(apiBucket[i]))
       }
