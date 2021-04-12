@@ -26,15 +26,15 @@ exports.initial = function (configData) {
       login(config)
         .then(function () {
           if (fs.existsSync(config.data)) {
-            let migrationBackupDirPath = path.join(process.cwd(), '_backup_' + Math.floor((Math.random() * 1000)))
-            return createBackup(migrationBackupDirPath, config).then((basePath) => {
-              config.data = basePath
-              return util.sanitizeStack(config)
-            }).catch(e => {
-              console.error(e)
-              process.exit(1)
-            })
-              .then(() => {
+            // let migrationBackupDirPath = path.join(process.cwd(), '_backup_' + Math.floor((Math.random() * 1000)))
+            // return createBackup(migrationBackupDirPath, config).then((basePath) => {
+            //   config.data = basePath
+            //   return util.sanitizeStack(config)
+            // }).catch(e => {
+            //   console.error(e)
+            //   process.exit(1)
+            // })
+              // .then(() => {
                 let types = config.modules.types
                 if (config.moduleName && config.moduleName !== undefined) {
                   singleImport(config.moduleName, types, config).then(() => {
@@ -45,10 +45,10 @@ exports.initial = function (configData) {
                     return resolve()
                   })
                 }
-              }).catch(e => {
-                console.error(e)
-                return reject(e)
-              })
+              // }).catch(e => {
+              //   console.error(e)
+              //   return reject(e)
+              // })
           } else {
             let filename = path.basename(config.data)
             addlogs(config, chalk.red(filename + " Folder does not Exist"), 'error')
@@ -166,6 +166,8 @@ let allImport = async (config, types) => {
           config['stackName'] = stackResponse.name
         }
         await exportedModule.start(config).then(result => {
+          return
+        }).catch(function (error) {
           return
         })
       }

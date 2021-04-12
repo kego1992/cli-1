@@ -45,8 +45,8 @@ importLabels.prototype = {
     addlogs(config, chalk.white('Migrating labels'), 'success')
     labelsFolderPath = path.resolve(config.data, labelConfig.dirName)
     self.labels = helper.readFile(path.resolve(labelsFolderPath, labelConfig.fileName));
-    labelMapperPath = path.resolve(config.data, 'mapper', 'labels');
-    labelUidMapperPath = path.resolve(config.data, 'mapper', 'labels', 'uid-mapping.json');
+    labelMapperPath = path.resolve(config.data, config.target_stack,  'mapper', 'labels');
+    labelUidMapperPath = path.resolve(config.data, config.target_stack,  'mapper', 'labels', 'uid-mapping.json');
     labelSuccessPath = path.resolve(config.data, 'labels', 'success.json');
     labelFailsPath = path.resolve(config.data, 'labels', 'fails.json');
     mkdirp.sync(labelMapperPath);

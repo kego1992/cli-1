@@ -37,8 +37,8 @@ importEnvironments.prototype = {
     config = credentialConfig
     addlogs(config, 'Migrating environment', 'success')
     environmentsFolderPath = path.resolve(config.data, environmentConfig.dirName)
-    envMapperPath = path.resolve(config.data, 'mapper', 'environments')
-    envUidMapperPath = path.resolve(config.data, 'mapper', 'environments', 'uid-mapping.json')
+    envMapperPath = path.resolve(config.data, config.target_stack,  'mapper', 'environments')
+    envUidMapperPath = path.resolve(config.data, config.target_stack,  'mapper', 'environments', 'uid-mapping.json')
     envSuccessPath = path.resolve(config.data, 'environments', 'success.json')
     envFailsPath = path.resolve(config.data, 'environments', 'fails.json')
     self.environments = helper.readFile(path.resolve(environmentsFolderPath, environmentConfig.fileName))

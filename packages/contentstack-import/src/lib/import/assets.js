@@ -23,6 +23,7 @@ const assetsConfig = config.modules.assets
 let assetBatchLimit = (assetsConfig.hasOwnProperty('batchLimit') && typeof assetBatchLimit === 'number') ?
   assetsConfig.assetBatchLimit : 2
 let assetsFolderPath
+let mapperDir
 let mapperDirPath
 let environmentPath
 let client
@@ -44,23 +45,25 @@ importAssets.prototype = {
     config = credential
     client = stack.Client(config)
     assetsFolderPath = path.join(config.data, config.modules.assets.dirName)
-    mapperDirPath = path.resolve(config.data, 'mapper', 'assets')
+    mapperDir = path.resolve(config.data, config.target_stack)
+    mapperDirPath = path.resolve(config.data, config.target_stack, 'mapper', 'assets')
     environmentPath = path.resolve(config.data, 'environments', 'environments.json')
     self.uidMapperPath = path.join(mapperDirPath, 'uid-mapping.json')
     self.urlMapperPath = path.join(mapperDirPath, 'url-mapping.json')
     self.failsPath = path.join(mapperDirPath, 'fail.json')
     self.assets = helper.readFile(path.join(assetsFolderPath, assetsConfig.fileName))
     self.environment = helper.readFile(environmentPath)
-    if (fs.existsSync(self.uidMapperPath)) {
-      self.uidMapping = helper.readFile(self.uidMapperPath)
-    }
-    if (fs.existsSync(self.urlMapperPath)) {
-      self.urlMapping = helper.readFile(self.urlMapperPath)
-    }
-
-    mkdirp.sync(mapperDirPath)
-
+    
     return new Promise(function (resolve, reject) {
+      if (fs.existsSync(self.uidMapperPath)) {
+        self.uidMapping = helper.readFile(self.uidMapperPath)
+      }
+      if (fs.existsSync(self.urlMapperPath)) {
+        self.urlMapping = helper.readFile(self.urlMapperPath)
+      }
+
+      mkdirp.sync(mapperDirPath)
+
       if (self.assets === undefined) {
         addlogs(config, 'No Assets Found', 'success')
         return resolve()
@@ -277,7 +280,7 @@ importAssets.prototype = {
   importFolders: function () {
     let self = this
     return new Promise(function (resolve, reject) {
-      let mappedFolderPath = path.resolve(config.data, 'mapper', 'assets', 'folder-mapping.json')
+      let mappedFolderPath = path.resolve(config.data, config.target_stack, 'mapper', 'assets', 'folder-mapping.json')
       self.folderDetails = helper.readFile(path.resolve(assetsFolderPath, 'folders.json'))
 
       if (_.isEmpty(self.folderDetails)) {

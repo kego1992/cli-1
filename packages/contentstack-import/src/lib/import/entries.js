@@ -43,10 +43,10 @@ let entryBatchLimit = config.rateLimit || 10
 
 function importEntries() {
   let self = this
-  mappedAssetUidPath = path.resolve(config.data, 'mapper', 'assets', 'uid-mapping.json')
-  mappedAssetUrlPath = path.resolve(config.data, 'mapper', 'assets', 'url-mapping.json')
+  mappedAssetUidPath = path.resolve(config.data, config.target_stack, 'mapper', 'assets', 'uid-mapping.json')
+  mappedAssetUrlPath = path.resolve(config.data, config.target_stack, 'mapper', 'assets', 'url-mapping.json')
 
-  entryMapperPath = path.resolve(config.data, 'mapper', 'entries')
+  entryMapperPath = path.resolve(config.data, config.target_stack, 'mapper', 'entries')
   environmentPath = path.resolve(config.data, 'environments', 'environments.json')
   mkdirp.sync(entryMapperPath)
 

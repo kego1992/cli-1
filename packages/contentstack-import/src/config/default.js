@@ -21,9 +21,10 @@ module.exports = {
       dirName: 'locales',
       fileName: 'locales.json',
       requiredKeys: [
+        'urlPath',
         'code',
-        'uid',
         'name',
+        'fallback_locale'
       ],
     },
     environments: {

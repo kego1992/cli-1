@@ -12,7 +12,7 @@ let Promise = require('bluebird')
 let chalk = require('chalk')
 
 let helper = require('../util/fs')
-let {addlogs} = require('../util/log')
+let { addlogs } = require('../util/log')
 let util = require('../util')
 let stack = require('../util/contentstack-management-sdk')
 let config = require('../../config/default')
@@ -21,9 +21,10 @@ let reqConcurrency = config.concurrency
 let langConfig = config.modules.locales
 let langFolderPath
 let langMapperPath
+let mapperDir
 let langUidMapperPath
 let langSuccessPath
-let langFailsPath 
+let langFailsPath
 let client
 
 let masterLanguage = config.master_locale
@@ -35,24 +36,30 @@ function importLanguages() {
 }
 
 importLanguages.prototype = {
-  start: function (credentialConfig) {  
+  start: function (credentialConfig) {
     addlogs(config, 'Migrating languages', 'success')
     let self = this
     config = credentialConfig
+
     client = stack.Client(config)
     langFolderPath = path.resolve(config.data, langConfig.dirName)
-    langMapperPath = path.resolve(config.data, 'mapper', 'languages')
-    langUidMapperPath = path.resolve(config.data, 'mapper', 'languages', 'uid-mapper.json')
-    langSuccessPath = path.resolve(config.data, 'mapper', 'languages', 'success.json')
-    langFailsPath = path.resolve(config.data, 'mapper', 'languages', 'fails.json')
-    mkdirp.sync(langMapperPath)
-    self.languages = helper.readFile(path.resolve(langFolderPath, langConfig.fileName))
-    if (fs.existsSync(langUidMapperPath)) {
-      self.langUidMapper = helper.readFile(langUidMapperPath)
-      self.langUidMapper = self.langUidMapper || {}
-    }
+    mapperDir = path.resolve(config.data, config.target_stack)
+    langMapperPath = path.resolve(config.data, config.target_stack, 'mapper', 'languages')
+    langUidMapperPath = path.resolve(config.data, config.target_stack, 'mapper', 'languages', 'uid-mapper.json')
+    langSuccessPath = path.resolve(config.data, config.target_stack, 'mapper', 'languages', 'success.json')
+    langFailsPath = path.resolve(config.data, config.target_stack, 'mapper', 'languages', 'fails.json')
 
     return new Promise(function (resolve, reject) {
+
+      self.languages = helper.readFile(path.resolve(langFolderPath, langConfig.fileName))
+      if (fs.existsSync(langUidMapperPath)) {
+        self.langUidMapper = helper.readFile(langUidMapperPath)
+        self.langUidMapper = self.langUidMapper || {}
+      }
+
+      mkdirp.sync(langMapperPath)
+
+
       if (self.languages === undefined) {
         addlogs(config, chalk.white('No Languages Found'), 'error')
         return resolve()
@@ -67,21 +74,21 @@ importLanguages.prototype = {
               name: lang.name,
             },
           }
-          
-         return client.stack({api_key: config.target_stack, management_token: config.management_token}).locale().create(requestOption)
-          .then(locale => {                    
-            self.success.push(locale.items)
-            self.langUidMapper[langUid] = locale.uid
-            helper.writeFile(langUidMapperPath, self.langUidMapper)
-          }).catch(function (err) {
-            let error = JSON.parse(err.message)
-            if (error.hasOwnProperty('errorCode') && error.errorCode === 247) {
-              addlogs(config, error.errors.code[0], 'success')
-              return
-            }
-            self.fails.push(lang)
-            addlogs(config, chalk.red('Language: \'' + lang.code + '\' failed to be import\n'), 'error')
-          })
+
+          return client.stack({ api_key: config.target_stack, management_token: config.management_token }).locale().create(requestOption)
+            .then(locale => {
+              self.success.push(locale.items)
+              self.langUidMapper[langUid] = locale.uid
+              helper.writeFile(langUidMapperPath, self.langUidMapper)
+            }).catch(function (err) {
+              let error = JSON.parse(err.message)
+              if (error.hasOwnProperty('errorCode') && error.errorCode === 247) {
+                addlogs(config, error.errors.code[0], 'success')
+                return
+              }
+              self.fails.push(lang)
+              addlogs(config, chalk.red('Language: \'' + lang.code + '\' failed to be import\n'), 'error')
+            })
         } else {
           // the language has already been created
           addlogs(config, chalk.yellow('The language: \'' + lang.code + '\' already exists.'), 'error')
@@ -90,9 +97,9 @@ importLanguages.prototype = {
         // import 2 languages at a time
       }, {
         concurrency: reqConcurrency,
-      }).then(function () {
+      }).then(async function () {
         // languages have imported successfully
-        self.update_locales(langUids)
+        await self.update_locales(langUids)
         helper.writeFile(langSuccessPath, self.success)
         addlogs(config, chalk.green('Languages have been imported successfully!'), 'success')
         return resolve()
@@ -105,19 +112,30 @@ importLanguages.prototype = {
     })
   },
   update_locales: function (langUids) {
+
     let self = this
-    Promise.all(
-      langUids.map(async langUid => {
-        let lang = self.languages[langUid]
-        let langobj = client.stack({api_key: config.target_stack, management_token: config.management_token}).locale(lang.code)
-        Object.assign(langobj, _.cloneDeep(lang))
-        langobj.update()
-        .then(()=>{
+    new Promise(function (resolve, reject) {
+      Promise.all(
+        langUids.map(async langUid => {
+          let lang = {}
+          let requireKeys = config.modules.locales.requiredKeys
+          let _lang = self.languages[langUid]
+          requireKeys.forEach(e => {
+            lang[e] = _lang[e]
+          })
+          let langobj = client.stack({ api_key: config.target_stack, management_token: config.management_token }).locale(lang.code)
+          Object.assign(langobj, _.cloneDeep(lang))
+          langobj.update()
+            .then(() => {
+            }).catch((error) => {
+            })
         })
-      })
-    )
-    .then(()=>{
-    }).catch((error) => {
+      )
+        .then(() => {
+          return resolve()
+        }).catch((error) => {
+          return reject()
+        })
     })
   },
 }

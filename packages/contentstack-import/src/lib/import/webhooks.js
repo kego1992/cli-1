@@ -37,10 +37,10 @@ importWebhooks.prototype = {
     addlogs(config, chalk.white('Migrating webhooks'), 'success')
     client = stack.Client(config)
     webhooksFolderPath = path.resolve(config.data, webhooksConfig.dirName);
-    webMapperPath = path.resolve(config.data, 'mapper', 'webhooks');
-    webUidMapperPath = path.resolve(config.data, 'mapper', 'webhooks', 'uid-mapping.json');
-    webSuccessPath = path.resolve(config.data, 'mapper', 'webhooks', 'success.json');
-    webFailsPath = path.resolve(config.data, 'mapper', 'webhooks', 'fails.json');
+    webMapperPath = path.resolve(config.data, config.target_stack,  'mapper', 'webhooks');
+    webUidMapperPath = path.resolve(config.data, config.target_stack,  'mapper', 'webhooks', 'uid-mapping.json');
+    webSuccessPath = path.resolve(config.data, config.target_stack,  'mapper', 'webhooks', 'success.json');
+    webFailsPath = path.resolve(config.data, config.target_stack,  'mapper', 'webhooks', 'fails.json');
     self.webhooks = helper.readFile(path.resolve(webhooksFolderPath, webhooksConfig.fileName));
     if (fs.existsSync(webUidMapperPath)) {
       self.webUidMapper = helper.readFile(webUidMapperPath);

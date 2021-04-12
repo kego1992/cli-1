@@ -45,8 +45,8 @@ importWorkflows.prototype = {
     addlogs(config, chalk.white('Migrating workflows'), 'success')
     workflowFolderPath = path.resolve(config.data, workflowConfig.dirName)
     self.workflows = helper.readFile(path.resolve(workflowFolderPath, workflowConfig.fileName));
-    workflowMapperPath = path.resolve(config.data, 'mapper', 'workflows');
-    workflowUidMapperPath = path.resolve(config.data, 'mapper', 'workflows', 'uid-mapping.json');
+    workflowMapperPath = path.resolve(config.data, config.target_stack,  'mapper', 'workflows');
+    workflowUidMapperPath = path.resolve(config.data, config.target_stack,  'mapper', 'workflows', 'uid-mapping.json');
     workflowSuccessPath = path.resolve(config.data, 'workflows', 'success.json');
     workflowFailsPath = path.resolve(config.data, 'workflows', 'fails.json');
     mkdirp.sync(workflowMapperPath);

@@ -47,11 +47,11 @@ importGlobalFields.prototype = {
     let self = this
     config = credential
     globalfieldsFolderPath = path.resolve(config.data, globalfieldsConfig.dirName)
-    globalfieldsMapperPath = path.resolve(config.data, 'mapper', 'global_fields')
-    globalfieldsUidMapperPath = path.resolve(config.data, 'mapper', 'global_fields', 'uid-mapping.json')
-    globalfieldsSuccessPath = path.resolve(config.data, 'mapper', 'global_fields', 'success.json')
-    globalFieldsPending = path.resolve(config.data, 'mapper', 'global_fields', 'pending_global_fields.js')
-    globalfieldsFailsPath = path.resolve(config.data, 'mapper', 'global_fields', 'fails.json')
+    globalfieldsMapperPath = path.resolve(config.data, config.target_stack,  'mapper', 'global_fields')
+    globalfieldsUidMapperPath = path.resolve(config.data, config.target_stack,  'mapper', 'global_fields', 'uid-mapping.json')
+    globalfieldsSuccessPath = path.resolve(config.data, config.target_stack,  'mapper', 'global_fields', 'success.json')
+    globalFieldsPending = path.resolve(config.data, config.target_stack,  'mapper', 'global_fields', 'pending_global_fields.js')
+    globalfieldsFailsPath = path.resolve(config.data, config.target_stack,  'mapper', 'global_fields', 'fails.json')
     self.globalfields = helper.readFile(path.resolve(globalfieldsFolderPath, globalfieldsConfig.fileName))
     if (fs.existsSync(globalfieldsUidMapperPath)) {
       self.snipUidMapper = helper.readFile(globalfieldsUidMapperPath)

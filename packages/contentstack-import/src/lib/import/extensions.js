@@ -39,8 +39,8 @@ importExtensions.prototype = {
     client = stack.Client(config)
 
     extensionsFolderPath = path.resolve(config.data, extensionsConfig.dirName)
-    extMapperPath = path.resolve(config.data, 'mapper', 'extensions')
-    extUidMapperPath = path.resolve(config.data, 'mapper/extensions', 'uid-mapping.json')
+    extMapperPath = path.resolve(config.data, config.target_stack,  'mapper', 'extensions')
+    extUidMapperPath = path.resolve(config.data, config.target_stack, 'mapper, extensions', 'uid-mapping.json')
     extSuccessPath = path.resolve(config.data, 'extensions', 'success.json')
     extFailsPath = path.resolve(config.data, 'extensions', 'fails.json')
     self.extensions = helper.readFile(path.resolve(extensionsFolderPath, extensionsConfig.fileName))
