@@ -4,6 +4,7 @@ module.exports = {
   // not passing `locale` will migrate all the locales present
   // locales: ['fr-fr'],
   host: 'https://api.contentstack.io/v3',
+  cleanUp: false,
   modules: {
     types: [
       'locales',
@@ -24,7 +25,7 @@ module.exports = {
         'code',
         'uid',
         'name',
-        'fallback_locale'
+        'fallback_locale',
       ],
     },
     environments: {
@@ -335,7 +336,8 @@ module.exports = {
     'lt-uz-uz',
     'vi-vn',
     'xh',
-    'zu'],
+    'zu',
+  ],
 
   apis: {
     userSession: '/user-session/',
@@ -354,7 +356,7 @@ module.exports = {
   rateLimit: 5,
   preserveStackVersion: false,
   entriesPublish: true,
-  concurrency: 1
+  concurrency: 1,
 //  ,useBackedupDir: '_backup_397'
   // backupConcurrency: 10,
 }

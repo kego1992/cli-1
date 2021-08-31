@@ -4,9 +4,9 @@
 * MIT Licensed
 */
 let defaultConfig = require('../../config/default')
-let { initial } = require('../../app')
+let {initial} = require('../../app')
 let _ = require('lodash')
-const { cli } = require('cli-ux')
+const {cli} = require('cli-ux')
 let message = require('../../../messages/index.json')
 
 exports.configWithMToken = function (config, managementTokens, moduleName, host, _authToken, backupdir) {
@@ -18,16 +18,16 @@ exports.configWithMToken = function (config, managementTokens, moduleName, host,
     }
     defaultConfig.host = host
     if (backupdir) {
-      defaultConfig.useBackedupDir = backupdir;
+      defaultConfig.useBackedupDir = backupdir
     }
     defaultConfig.auth_token = _authToken
     defaultConfig = _.merge(defaultConfig, externalConfig)
     initial(defaultConfig)
-      .then(() => {
-        return resolve()
-      }).catch((error) => {
-        return reject()
-      })
+    .then(() => {
+      return resolve()
+    }).catch(error => {
+      return reject()
+    })
   })
 }
 
@@ -42,14 +42,14 @@ exports.parameterWithMToken = function (managementTokens, data, moduleName, host
     defaultConfig.data = data
     defaultConfig.host = host
     if (backupdir) {
-      defaultConfig.useBackedupDir = backupdir;
+      defaultConfig.useBackedupDir = backupdir
     }
     initial(defaultConfig)
-      .then(() => {
-        return resolve()
-      }).catch((error) => {
-        return reject()
-      })
+    .then(() => {
+      return resolve()
+    }).catch(error => {
+      return reject()
+    })
   })
 }
 
@@ -66,14 +66,14 @@ exports.withoutParameterMToken = async (managementTokens, moduleName, host, _aut
     defaultConfig.data = exporteddata
     defaultConfig.host = host
     if (backupdir) {
-      defaultConfig.useBackedupDir = backupdir;
+      defaultConfig.useBackedupDir = backupdir
     }
     initial(defaultConfig)
-      .then(() => {
-        return resolve()
-      }).catch((error) => {
-        return reject()
-      })
+    .then(() => {
+      return resolve()
+    }).catch(error => {
+      return reject()
+    })
   })
 }
 
@@ -92,22 +92,23 @@ exports.configWithAuthToken = function (config, _authToken, moduleName, host, ba
     }
 
     if (backupdir) {
-      defaultConfig.useBackedupDir = backupdir;
+      defaultConfig.useBackedupDir = backupdir
     }
     defaultConfig = _.merge(defaultConfig, externalConfig)
     initial(defaultConfig)
-      .then(() => {
-        return resolve()
-      }).catch((error) => {
-        return reject()
-      })
+    .then(() => {
+      return resolve()
+    }).catch(error => {
+      return reject()
+    })
   })
 }
 
-exports.parametersWithAuthToken = function (_authToken, targetStack, data, moduleName, host, backupdir) {
+exports.parametersWithAuthToken = function (_authToken, targetStack, data, moduleName, host, backupdir, cleanUp = false) {
   return new Promise(async function (resolve, reject) {
     defaultConfig.auth_token = _authToken
     defaultConfig.target_stack = targetStack
+    defaultConfig.cleanUp = cleanUp
     if (moduleName && moduleName !== undefined && backupdir === undefined) {
       defaultConfig.moduleName = moduleName
     } else if (moduleName && moduleName !== undefined && backupdir !== undefined) {
@@ -118,11 +119,11 @@ exports.parametersWithAuthToken = function (_authToken, targetStack, data, modul
     defaultConfig.host = host
 
     initial(defaultConfig)
-      .then(() => {
-        return resolve()
-      }).catch((error) => {
-        return reject()
-      })
+    .then(() => {
+      return resolve()
+    }).catch(error => {
+      return reject()
+    })
   })
 }
 
@@ -143,10 +144,10 @@ exports.withoutParametersWithAuthToken = async (_authToken, moduleName, host, ba
     defaultConfig.host = host
 
     initial(defaultConfig)
-      .then(() => {
-        return resolve()
-      }).catch((error) => {
-        return reject()
-      })
+    .then(() => {
+      return resolve()
+    }).catch(error => {
+      return reject()
+    })
   })
 }
